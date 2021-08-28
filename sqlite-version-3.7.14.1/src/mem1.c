@@ -78,7 +78,7 @@ static malloc_zone_t* _sqliteZone_;
 #else /* if not __APPLE__ */
 
 /*
-** Use standard C library malloc and free on non-Apple systems.  
+** Use standard C library malloc and free on non-Apple systems.
 ** Also used by Apple systems if SQLITE_WITHOUT_ZONEMALLOC is defined.
 */
 #define SQLITE_MALLOC(x)    malloc(x)
@@ -107,27 +107,32 @@ static malloc_zone_t* _sqliteZone_;
 ** cases of nByte<=0 will be intercepted and dealt with by higher level
 ** routines.
 */
-static void *sqlite3MemMalloc(int nByte){
+static void *sqlite3MemMalloc(int nByte)
+{
 #ifdef SQLITE_MALLOCSIZE
-  void *p = SQLITE_MALLOC( nByte );
-  if( p==0 ){
-    testcase( sqlite3GlobalConfig.xLog!=0 );
-    sqlite3_log(SQLITE_NOMEM, "failed to allocate %u bytes of memory", nByte);
-  }
-  return p;
+    void *p = SQLITE_MALLOC(nByte);
+    if (p == 0)
+    {
+        testcase(sqlite3GlobalConfig.xLog != 0);
+        sqlite3_log(SQLITE_NOMEM, "failed to allocate %u bytes of memory", nByte);
+    }
+    return p;
 #else
-  sqlite3_int64 *p;
-  assert( nByte>0 );
-  nByte = ROUND8(nByte);
-  p = SQLITE_MALLOC( nByte+8 );
-  if( p ){
-    p[0] = nByte;
-    p++;
-  }else{
-    testcase( sqlite3GlobalConfig.xLog!=0 );
-    sqlite3_log(SQLITE_NOMEM, "failed to allocate %u bytes of memory", nByte);
-  }
-  return (void *)p;
+    sqlite3_int64 *p;
+    assert(nByte > 0);
+    nByte = ROUND8(nByte);
+    p = SQLITE_MALLOC(nByte + 8);
+    if (p)
+    {
+        p[0] = nByte;
+        p++;
+    }
+    else
+    {
+        testcase(sqlite3GlobalConfig.xLog != 0);
+        sqlite3_log(SQLITE_NOMEM, "failed to allocate %u bytes of memory", nByte);
+    }
+    return (void *)p;
 #endif
 }
 
@@ -139,14 +144,15 @@ static void *sqlite3MemMalloc(int nByte){
 ** cases where pPrior==0 will have been intecepted and dealt with
 ** by higher-level routines.
 */
-static void sqlite3MemFree(void *pPrior){
+static void sqlite3MemFree(void *pPrior)
+{
 #ifdef SQLITE_MALLOCSIZE
-  SQLITE_FREE(pPrior);
+    SQLITE_FREE(pPrior);
 #else
-  sqlite3_int64 *p = (sqlite3_int64*)pPrior;
-  assert( pPrior!=0 );
-  p--;
-  SQLITE_FREE(p);
+    sqlite3_int64 *p = (sqlite3_int64*)pPrior;
+    assert(pPrior != 0);
+    p--;
+    SQLITE_FREE(p);
 #endif
 }
 
@@ -154,15 +160,16 @@ static void sqlite3MemFree(void *pPrior){
 ** Report the allocated size of a prior return from xMalloc()
 ** or xRealloc().
 */
-static int sqlite3MemSize(void *pPrior){
+static int sqlite3MemSize(void *pPrior)
+{
 #ifdef SQLITE_MALLOCSIZE
-  return pPrior ? (int)SQLITE_MALLOCSIZE(pPrior) : 0;
+    return pPrior ? (int)SQLITE_MALLOCSIZE(pPrior) : 0;
 #else
-  sqlite3_int64 *p;
-  if( pPrior==0 ) return 0;
-  p = (sqlite3_int64*)pPrior;
-  p--;
-  return (int)p[0];
+    sqlite3_int64 *p;
+    if (pPrior == 0) return 0;
+    p = (sqlite3_int64*)pPrior;
+    p--;
+    return (int)p[0];
 #endif
 }
 
@@ -176,84 +183,99 @@ static int sqlite3MemSize(void *pPrior){
 ** cases where nByte<=0 will have been intercepted by higher-level
 ** routines and redirected to xFree.
 */
-static void *sqlite3MemRealloc(void *pPrior, int nByte){
+static void *sqlite3MemRealloc(void *pPrior, int nByte)
+{
 #ifdef SQLITE_MALLOCSIZE
-  void *p = SQLITE_REALLOC(pPrior, nByte);
-  if( p==0 ){
-    testcase( sqlite3GlobalConfig.xLog!=0 );
-    sqlite3_log(SQLITE_NOMEM,
-      "failed memory resize %u to %u bytes",
-      SQLITE_MALLOCSIZE(pPrior), nByte);
-  }
-  return p;
+    void *p = SQLITE_REALLOC(pPrior, nByte);
+    if (p == 0)
+    {
+        testcase(sqlite3GlobalConfig.xLog != 0);
+        sqlite3_log(SQLITE_NOMEM,
+                    "failed memory resize %u to %u bytes",
+                    SQLITE_MALLOCSIZE(pPrior), nByte);
+    }
+    return p;
 #else
-  sqlite3_int64 *p = (sqlite3_int64*)pPrior;
-  assert( pPrior!=0 && nByte>0 );
-  assert( nByte==ROUND8(nByte) ); /* EV: R-46199-30249 */
-  p--;
-  p = SQLITE_REALLOC(p, nByte+8 );
-  if( p ){
-    p[0] = nByte;
-    p++;
-  }else{
-    testcase( sqlite3GlobalConfig.xLog!=0 );
-    sqlite3_log(SQLITE_NOMEM,
-      "failed memory resize %u to %u bytes",
-      sqlite3MemSize(pPrior), nByte);
-  }
-  return (void*)p;
+    sqlite3_int64 *p = (sqlite3_int64*)pPrior;
+    assert(pPrior != 0 && nByte > 0);
+    assert(nByte == ROUND8(nByte)); /* EV: R-46199-30249 */
+    p--;
+    p = SQLITE_REALLOC(p, nByte + 8);
+    if (p)
+    {
+        p[0] = nByte;
+        p++;
+    }
+    else
+    {
+        testcase(sqlite3GlobalConfig.xLog != 0);
+        sqlite3_log(SQLITE_NOMEM,
+                    "failed memory resize %u to %u bytes",
+                    sqlite3MemSize(pPrior), nByte);
+    }
+    return (void*)p;
 #endif
 }
 
 /*
 ** Round up a request size to the next valid allocation size.
 */
-static int sqlite3MemRoundup(int n){
-  return ROUND8(n);
+static int sqlite3MemRoundup(int n)
+{
+    return ROUND8(n);
 }
 
 /*
 ** Initialize this module.
 */
-static int sqlite3MemInit(void *NotUsed){
+static int sqlite3MemInit(void *NotUsed)
+{
 #if defined(__APPLE__) && !defined(SQLITE_WITHOUT_ZONEMALLOC)
-  int cpuCount;
-  size_t len;
-  if( _sqliteZone_ ){
-    return SQLITE_OK;
-  }
-  len = sizeof(cpuCount);
-  /* One usually wants to use hw.acctivecpu for MT decisions, but not here */
-  sysctlbyname("hw.ncpu", &cpuCount, &len, NULL, 0);
-  if( cpuCount>1 ){
-    /* defer MT decisions to system malloc */
-    _sqliteZone_ = malloc_default_zone();
-  }else{
-    /* only 1 core, use our own zone to contention over global locks, 
-    ** e.g. we have our own dedicated locks */
-    bool success;
-    malloc_zone_t* newzone = malloc_create_zone(4096, 0);
-    malloc_set_zone_name(newzone, "Sqlite_Heap");
-    do{
-      success = OSAtomicCompareAndSwapPtrBarrier(NULL, newzone, 
-                                 (void * volatile *)&_sqliteZone_);
-    }while(!_sqliteZone_);
-    if( !success ){
-      /* somebody registered a zone first */
-      malloc_destroy_zone(newzone);
+    int cpuCount;
+    size_t len;
+    if (_sqliteZone_)
+    {
+        return SQLITE_OK;
     }
-  }
+    len = sizeof(cpuCount);
+    /* One usually wants to use hw.acctivecpu for MT decisions, but not here */
+    sysctlbyname("hw.ncpu", &cpuCount, &len, NULL, 0);
+    if (cpuCount > 1)
+    {
+        /* defer MT decisions to system malloc */
+        _sqliteZone_ = malloc_default_zone();
+    }
+    else
+    {
+        /* only 1 core, use our own zone to contention over global locks,
+        ** e.g. we have our own dedicated locks */
+        bool success;
+        malloc_zone_t* newzone = malloc_create_zone(4096, 0);
+        malloc_set_zone_name(newzone, "Sqlite_Heap");
+        do
+        {
+            success = OSAtomicCompareAndSwapPtrBarrier(NULL, newzone,
+                      (void * volatile *)&_sqliteZone_);
+        }
+        while (!_sqliteZone_);
+        if (!success)
+        {
+            /* somebody registered a zone first */
+            malloc_destroy_zone(newzone);
+        }
+    }
 #endif
-  UNUSED_PARAMETER(NotUsed);
-  return SQLITE_OK;
+    UNUSED_PARAMETER(NotUsed);
+    return SQLITE_OK;
 }
 
 /*
 ** Deinitialize this module.
 */
-static void sqlite3MemShutdown(void *NotUsed){
-  UNUSED_PARAMETER(NotUsed);
-  return;
+static void sqlite3MemShutdown(void *NotUsed)
+{
+    UNUSED_PARAMETER(NotUsed);
+    return;
 }
 
 /*
@@ -262,18 +284,20 @@ static void sqlite3MemShutdown(void *NotUsed){
 ** Populate the low-level memory allocation function pointers in
 ** sqlite3GlobalConfig.m with pointers to the routines in this file.
 */
-void sqlite3MemSetDefault(void){
-  static const sqlite3_mem_methods defaultMethods = {
-     sqlite3MemMalloc,
-     sqlite3MemFree,
-     sqlite3MemRealloc,
-     sqlite3MemSize,
-     sqlite3MemRoundup,
-     sqlite3MemInit,
-     sqlite3MemShutdown,
-     0
-  };
-  sqlite3_config(SQLITE_CONFIG_MALLOC, &defaultMethods);
+void sqlite3MemSetDefault(void)
+{
+    static const sqlite3_mem_methods defaultMethods =
+    {
+        sqlite3MemMalloc,
+        sqlite3MemFree,
+        sqlite3MemRealloc,
+        sqlite3MemSize,
+        sqlite3MemRoundup,
+        sqlite3MemInit,
+        sqlite3MemShutdown,
+        0
+    };
+    sqlite3_config(SQLITE_CONFIG_MALLOC, &defaultMethods);
 }
 
 #endif /* SQLITE_SYSTEM_MALLOC */

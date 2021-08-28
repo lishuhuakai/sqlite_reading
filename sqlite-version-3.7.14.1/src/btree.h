@@ -26,7 +26,7 @@
 ** it must be turned on for each database using "PRAGMA auto_vacuum = 1".
 */
 #ifndef SQLITE_DEFAULT_AUTOVACUUM
-  #define SQLITE_DEFAULT_AUTOVACUUM 0
+#define SQLITE_DEFAULT_AUTOVACUUM 0
 #endif
 
 #define BTREE_AUTOVACUUM_NONE 0        /* Do not do auto-vacuum */
@@ -42,12 +42,12 @@ typedef struct BtShared BtShared;
 
 
 int sqlite3BtreeOpen(
-  sqlite3_vfs *pVfs,       /* VFS to use with this b-tree */
-  const char *zFilename,   /* Name of database file to open */
-  sqlite3 *db,             /* Associated database connection */
-  Btree **ppBtree,         /* Return open Btree* here */
-  int flags,               /* Flags */
-  int vfsFlags             /* Flags passed through to VFS open */
+    sqlite3_vfs *pVfs,       /* VFS to use with this b-tree */
+    const char *zFilename,   /* Name of database file to open */
+    sqlite3 *db,             /* Associated database connection */
+    Btree **ppBtree,         /* Return open Btree* here */
+    int flags,               /* Flags */
+    int vfsFlags             /* Flags passed through to VFS open */
 );
 
 /* The flags parameter to sqlite3BtreeOpen can be the bitwise or of the
@@ -62,23 +62,23 @@ int sqlite3BtreeOpen(
 #define BTREE_UNORDERED     8  /* Use of a hash implementation is OK */
 
 int sqlite3BtreeClose(Btree*);
-int sqlite3BtreeSetCacheSize(Btree*,int);
-int sqlite3BtreeSetSafetyLevel(Btree*,int,int,int);
+int sqlite3BtreeSetCacheSize(Btree*, int);
+int sqlite3BtreeSetSafetyLevel(Btree*, int, int, int);
 int sqlite3BtreeSyncDisabled(Btree*);
 int sqlite3BtreeSetPageSize(Btree *p, int nPagesize, int nReserve, int eFix);
 int sqlite3BtreeGetPageSize(Btree*);
-int sqlite3BtreeMaxPageCount(Btree*,int);
+int sqlite3BtreeMaxPageCount(Btree*, int);
 u32 sqlite3BtreeLastPage(Btree*);
-int sqlite3BtreeSecureDelete(Btree*,int);
+int sqlite3BtreeSecureDelete(Btree*, int);
 int sqlite3BtreeGetReserve(Btree*);
 int sqlite3BtreeSetAutoVacuum(Btree *, int);
 int sqlite3BtreeGetAutoVacuum(Btree *);
-int sqlite3BtreeBeginTrans(Btree*,int);
+int sqlite3BtreeBeginTrans(Btree*, int);
 int sqlite3BtreeCommitPhaseOne(Btree*, const char *zMaster);
 int sqlite3BtreeCommitPhaseTwo(Btree*, int);
 int sqlite3BtreeCommit(Btree*);
-int sqlite3BtreeRollback(Btree*,int);
-int sqlite3BtreeBeginStmt(Btree*,int);
+int sqlite3BtreeRollback(Btree*, int);
+int sqlite3BtreeBeginStmt(Btree*, int);
 int sqlite3BtreeCreateTable(Btree*, int*, int flags);
 int sqlite3BtreeIsInTrans(Btree*);
 int sqlite3BtreeIsInReadTrans(Btree*);
@@ -116,7 +116,7 @@ int sqlite3BtreeUpdateMeta(Btree*, int idx, u32 value);
 
 /*
 ** The second parameter to sqlite3BtreeGetMeta or sqlite3BtreeUpdateMeta
-** should be one of the following values. The integer values are assigned 
+** should be one of the following values. The integer values are assigned
 ** to constants so that the offset of the corresponding field in an
 ** SQLite database header may be found using the following formula:
 **
@@ -142,28 +142,28 @@ int sqlite3BtreeUpdateMeta(Btree*, int idx, u32 value);
 #define BTREE_BULKLOAD 0x00000001
 
 int sqlite3BtreeCursor(
-  Btree*,                              /* BTree containing table to open */
-  int iTable,                          /* Index of root page */
-  int wrFlag,                          /* 1 for writing.  0 for read-only */
-  struct KeyInfo*,                     /* First argument to compare function */
-  BtCursor *pCursor                    /* Space to write cursor structure */
+    Btree*,                              /* BTree containing table to open */
+    int iTable,                          /* Index of root page */
+    int wrFlag,                          /* 1 for writing.  0 for read-only */
+    struct KeyInfo*,                     /* First argument to compare function */
+    BtCursor *pCursor                    /* Space to write cursor structure */
 );
 int sqlite3BtreeCursorSize(void);
 void sqlite3BtreeCursorZero(BtCursor*);
 
 int sqlite3BtreeCloseCursor(BtCursor*);
 int sqlite3BtreeMovetoUnpacked(
-  BtCursor*,
-  UnpackedRecord *pUnKey,
-  i64 intKey,
-  int bias,
-  int *pRes
+    BtCursor*,
+    UnpackedRecord *pUnKey,
+    i64 intKey,
+    int bias,
+    int *pRes
 );
 int sqlite3BtreeCursorHasMoved(BtCursor*, int*);
 int sqlite3BtreeDelete(BtCursor*);
 int sqlite3BtreeInsert(BtCursor*, const void *pKey, i64 nKey,
-                                  const void *pData, int nData,
-                                  int nZero, int bias, int seekResult);
+                       const void *pData, int nData,
+                       int nZero, int bias, int seekResult);
 int sqlite3BtreeFirst(BtCursor*, int *pRes);
 int sqlite3BtreeLast(BtCursor*, int *pRes);
 int sqlite3BtreeNext(BtCursor*, int *pRes);
@@ -201,7 +201,7 @@ void sqlite3BtreeCursorList(Btree*);
 #endif
 
 #ifndef SQLITE_OMIT_WAL
-  int sqlite3BtreeCheckpoint(Btree*, int, int *, int *);
+int sqlite3BtreeCheckpoint(Btree*, int, int *, int *);
 #endif
 
 /*
@@ -210,24 +210,24 @@ void sqlite3BtreeCursorList(Btree*);
 ** Enter and Leave procedures no-ops.
 */
 #ifndef SQLITE_OMIT_SHARED_CACHE
-  void sqlite3BtreeEnter(Btree*);
-  void sqlite3BtreeEnterAll(sqlite3*);
+void sqlite3BtreeEnter(Btree*);
+void sqlite3BtreeEnterAll(sqlite3*);
 #else
-# define sqlite3BtreeEnter(X) 
+# define sqlite3BtreeEnter(X)
 # define sqlite3BtreeEnterAll(X)
 #endif
 
 #if !defined(SQLITE_OMIT_SHARED_CACHE) && SQLITE_THREADSAFE
-  int sqlite3BtreeSharable(Btree*);
-  void sqlite3BtreeLeave(Btree*);
-  void sqlite3BtreeEnterCursor(BtCursor*);
-  void sqlite3BtreeLeaveCursor(BtCursor*);
-  void sqlite3BtreeLeaveAll(sqlite3*);
+int sqlite3BtreeSharable(Btree*);
+void sqlite3BtreeLeave(Btree*);
+void sqlite3BtreeEnterCursor(BtCursor*);
+void sqlite3BtreeLeaveCursor(BtCursor*);
+void sqlite3BtreeLeaveAll(sqlite3*);
 #ifndef NDEBUG
-  /* These routines are used inside assert() statements only. */
-  int sqlite3BtreeHoldsMutex(Btree*);
-  int sqlite3BtreeHoldsAllMutexes(sqlite3*);
-  int sqlite3SchemaMutexHeld(sqlite3*,int,Schema*);
+/* These routines are used inside assert() statements only. */
+int sqlite3BtreeHoldsMutex(Btree*);
+int sqlite3BtreeHoldsAllMutexes(sqlite3*);
+int sqlite3SchemaMutexHeld(sqlite3*, int, Schema*);
 #endif
 #else
 

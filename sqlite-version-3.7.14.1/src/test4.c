@@ -25,26 +25,27 @@
 ** structure.
 */
 typedef struct Thread Thread;
-struct Thread {
-  /* The first group of fields are writable by the master and read-only
-  ** to the thread. */
-  char *zFilename;       /* Name of database file */
-  void (*xOp)(Thread*);  /* next operation to do */
-  char *zArg;            /* argument usable by xOp */
-  int opnum;             /* Operation number */
-  int busy;              /* True if this thread is in use */
+struct Thread
+{
+    /* The first group of fields are writable by the master and read-only
+    ** to the thread. */
+    char *zFilename;       /* Name of database file */
+    void (*xOp)(Thread*);  /* next operation to do */
+    char *zArg;            /* argument usable by xOp */
+    int opnum;             /* Operation number */
+    int busy;              /* True if this thread is in use */
 
-  /* The next group of fields are writable by the thread but read-only to the
-  ** master. */
-  int completed;        /* Number of operations completed */
-  sqlite3 *db;           /* Open database */
-  sqlite3_stmt *pStmt;     /* Pending operation */
-  char *zErr;           /* operation error */
-  char *zStaticErr;     /* Static error message */
-  int rc;               /* operation return code */
-  int argc;             /* number of columns in result */
-  const char *argv[100];    /* result columns */
-  const char *colv[100];    /* result column names */
+    /* The next group of fields are writable by the thread but read-only to the
+    ** master. */
+    int completed;        /* Number of operations completed */
+    sqlite3 *db;           /* Open database */
+    sqlite3_stmt *pStmt;     /* Pending operation */
+    char *zErr;           /* operation error */
+    char *zStaticErr;     /* Static error message */
+    int rc;               /* operation return code */
+    int argc;             /* number of columns in result */
+    const char *argv[100];    /* result columns */
+    const char *colv[100];    /* result column names */
 };
 
 /*
@@ -56,48 +57,56 @@ static Thread threadset[N_THREAD];
 
 
 /*
-** The main loop for a thread.  Threads use busy waiting. 
+** The main loop for a thread.  Threads use busy waiting.
 */
-static void *thread_main(void *pArg){
-  Thread *p = (Thread*)pArg;
-  if( p->db ){
-    sqlite3_close(p->db);
-  }
-  sqlite3_open(p->zFilename, &p->db);
-  if( SQLITE_OK!=sqlite3_errcode(p->db) ){
-    p->zErr = strdup(sqlite3_errmsg(p->db));
-    sqlite3_close(p->db);
-    p->db = 0;
-  }
-  p->pStmt = 0;
-  p->completed = 1;
-  while( p->opnum<=p->completed ) sched_yield();
-  while( p->xOp ){
-    if( p->zErr && p->zErr!=p->zStaticErr ){
-      sqlite3_free(p->zErr);
-      p->zErr = 0;
+static void *thread_main(void *pArg)
+{
+    Thread *p = (Thread*)pArg;
+    if (p->db)
+    {
+        sqlite3_close(p->db);
     }
-    (*p->xOp)(p);
-    p->completed++;
-    while( p->opnum<=p->completed ) sched_yield();
-  }
-  if( p->pStmt ){
-    sqlite3_finalize(p->pStmt);
+    sqlite3_open(p->zFilename, &p->db);
+    if (SQLITE_OK != sqlite3_errcode(p->db))
+    {
+        p->zErr = strdup(sqlite3_errmsg(p->db));
+        sqlite3_close(p->db);
+        p->db = 0;
+    }
     p->pStmt = 0;
-  }
-  if( p->db ){
-    sqlite3_close(p->db);
-    p->db = 0;
-  }
-  if( p->zErr && p->zErr!=p->zStaticErr ){
-    sqlite3_free(p->zErr);
-    p->zErr = 0;
-  }
-  p->completed++;
+    p->completed = 1;
+    while (p->opnum <= p->completed) sched_yield();
+    while (p->xOp)
+    {
+        if (p->zErr && p->zErr != p->zStaticErr)
+        {
+            sqlite3_free(p->zErr);
+            p->zErr = 0;
+        }
+        (*p->xOp)(p);
+        p->completed++;
+        while (p->opnum <= p->completed) sched_yield();
+    }
+    if (p->pStmt)
+    {
+        sqlite3_finalize(p->pStmt);
+        p->pStmt = 0;
+    }
+    if (p->db)
+    {
+        sqlite3_close(p->db);
+        p->db = 0;
+    }
+    if (p->zErr && p->zErr != p->zStaticErr)
+    {
+        sqlite3_free(p->zErr);
+        p->zErr = 0;
+    }
+    p->completed++;
 #ifndef SQLITE_OMIT_DEPRECATED
-  sqlite3_thread_cleanup();
+    sqlite3_thread_cleanup();
 #endif
-  return 0;
+    return 0;
 }
 
 /*
@@ -105,12 +114,14 @@ static void *thread_main(void *pArg){
 ** If the argument is not a valid thread ID put an error message in
 ** the interpreter and return -1.
 */
-static int parse_thread_id(Tcl_Interp *interp, const char *zArg){
-  if( zArg==0 || zArg[0]==0 || zArg[1]!=0 || !isupper((unsigned char)zArg[0]) ){
-    Tcl_AppendResult(interp, "thread ID must be an upper case letter", 0);
-    return -1;
-  }
-  return zArg[0] - 'A';
+static int parse_thread_id(Tcl_Interp *interp, const char *zArg)
+{
+    if (zArg == 0 || zArg[0] == 0 || zArg[1] != 0 || !isupper((unsigned char)zArg[0]))
+    {
+        Tcl_AppendResult(interp, "thread ID must be an upper case letter", 0);
+        return -1;
+    }
+    return zArg[0] - 'A';
 }
 
 /*
@@ -120,47 +131,52 @@ static int parse_thread_id(Tcl_Interp *interp, const char *zArg){
 ** an open connection to the given database.
 */
 static int tcl_thread_create(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
-  pthread_t x;
-  int rc;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
+    pthread_t x;
+    int rc;
 
-  if( argc!=3 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " ID FILENAME", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( threadset[i].busy ){
-    Tcl_AppendResult(interp, "thread ", argv[1], " is already running", 0);
-    return TCL_ERROR;
-  }
-  threadset[i].busy = 1;
-  sqlite3_free(threadset[i].zFilename);
-  threadset[i].zFilename = sqlite3_mprintf("%s", argv[2]);
-  threadset[i].opnum = 1;
-  threadset[i].completed = 0;
-  rc = pthread_create(&x, 0, thread_main, &threadset[i]);
-  if( rc ){
-    Tcl_AppendResult(interp, "failed to create the thread", 0);
+    if (argc != 3)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " ID FILENAME", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "thread ", argv[1], " is already running", 0);
+        return TCL_ERROR;
+    }
+    threadset[i].busy = 1;
     sqlite3_free(threadset[i].zFilename);
-    threadset[i].busy = 0;
-    return TCL_ERROR;
-  }
-  pthread_detach(x);
-  return TCL_OK;
+    threadset[i].zFilename = sqlite3_mprintf("%s", argv[2]);
+    threadset[i].opnum = 1;
+    threadset[i].completed = 0;
+    rc = pthread_create(&x, 0, thread_main, &threadset[i]);
+    if (rc)
+    {
+        Tcl_AppendResult(interp, "failed to create the thread", 0);
+        sqlite3_free(threadset[i].zFilename);
+        threadset[i].busy = 0;
+        return TCL_ERROR;
+    }
+    pthread_detach(x);
+    return TCL_OK;
 }
 
 /*
 ** Wait for a thread to reach its idle state.
 */
-static void thread_wait(Thread *p){
-  while( p->opnum>p->completed ) sched_yield();
+static void thread_wait(Thread *p)
+{
+    while (p->opnum > p->completed) sched_yield();
 }
 
 /*
@@ -169,41 +185,45 @@ static void thread_wait(Thread *p){
 ** Wait on thread ID to reach its idle state.
 */
 static int tcl_thread_wait(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
 
-  if( argc!=2 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " ID", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( !threadset[i].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  thread_wait(&threadset[i]);
-  return TCL_OK;
+    if (argc != 2)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " ID", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (!threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    thread_wait(&threadset[i]);
+    return TCL_OK;
 }
 
 /*
 ** Stop a thread.
 */
-static void stop_thread(Thread *p){
-  thread_wait(p);
-  p->xOp = 0;
-  p->opnum++;
-  thread_wait(p);
-  sqlite3_free(p->zArg);
-  p->zArg = 0;
-  sqlite3_free(p->zFilename);
-  p->zFilename = 0;
-  p->busy = 0;
+static void stop_thread(Thread *p)
+{
+    thread_wait(p);
+    p->xOp = 0;
+    p->opnum++;
+    thread_wait(p);
+    sqlite3_free(p->zArg);
+    p->zArg = 0;
+    sqlite3_free(p->zFilename);
+    p->zFilename = 0;
+    p->busy = 0;
 }
 
 /*
@@ -213,32 +233,39 @@ static void stop_thread(Thread *p){
 ** completed.  If ID is "*" then stop all threads.
 */
 static int tcl_thread_halt(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
 
-  if( argc!=2 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " ID", 0);
-    return TCL_ERROR;
-  }
-  if( argv[1][0]=='*' && argv[1][1]==0 ){
-    for(i=0; i<N_THREAD; i++){
-      if( threadset[i].busy ) stop_thread(&threadset[i]);
+    if (argc != 2)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " ID", 0);
+        return TCL_ERROR;
     }
-  }else{
-    i = parse_thread_id(interp, argv[1]);
-    if( i<0 ) return TCL_ERROR;
-    if( !threadset[i].busy ){
-      Tcl_AppendResult(interp, "no such thread", 0);
-      return TCL_ERROR;
+    if (argv[1][0] == '*' && argv[1][1] == 0)
+    {
+        for (i = 0; i < N_THREAD; i++)
+        {
+            if (threadset[i].busy) stop_thread(&threadset[i]);
+        }
     }
-    stop_thread(&threadset[i]);
-  }
-  return TCL_OK;
+    else
+    {
+        i = parse_thread_id(interp, argv[1]);
+        if (i < 0) return TCL_ERROR;
+        if (!threadset[i].busy)
+        {
+            Tcl_AppendResult(interp, "no such thread", 0);
+            return TCL_ERROR;
+        }
+        stop_thread(&threadset[i]);
+    }
+    return TCL_OK;
 }
 
 /*
@@ -248,29 +275,32 @@ static int tcl_thread_halt(
 ** number of columns in the result set.
 */
 static int tcl_thread_argc(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
-  char zBuf[100];
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
+    char zBuf[100];
 
-  if( argc!=2 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " ID", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( !threadset[i].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  thread_wait(&threadset[i]);
-  sprintf(zBuf, "%d", threadset[i].argc);
-  Tcl_AppendResult(interp, zBuf, 0);
-  return TCL_OK;
+    if (argc != 2)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " ID", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (!threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    thread_wait(&threadset[i]);
+    sprintf(zBuf, "%d", threadset[i].argc);
+    Tcl_AppendResult(interp, zBuf, 0);
+    return TCL_OK;
 }
 
 /*
@@ -280,33 +310,37 @@ static int tcl_thread_argc(
 ** value of the N-th columns in the result set.
 */
 static int tcl_thread_argv(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
-  int n;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
+    int n;
 
-  if( argc!=3 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " ID N", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( !threadset[i].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  if( Tcl_GetInt(interp, argv[2], &n) ) return TCL_ERROR;
-  thread_wait(&threadset[i]);
-  if( n<0 || n>=threadset[i].argc ){
-    Tcl_AppendResult(interp, "column number out of range", 0);
-    return TCL_ERROR;
-  }
-  Tcl_AppendResult(interp, threadset[i].argv[n], 0);
-  return TCL_OK;
+    if (argc != 3)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " ID N", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (!threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    if (Tcl_GetInt(interp, argv[2], &n)) return TCL_ERROR;
+    thread_wait(&threadset[i]);
+    if (n < 0 || n >= threadset[i].argc)
+    {
+        Tcl_AppendResult(interp, "column number out of range", 0);
+        return TCL_ERROR;
+    }
+    Tcl_AppendResult(interp, threadset[i].argv[n], 0);
+    return TCL_OK;
 }
 
 /*
@@ -316,33 +350,37 @@ static int tcl_thread_argv(
 ** name of the N-th columns in the result set.
 */
 static int tcl_thread_colname(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
-  int n;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
+    int n;
 
-  if( argc!=3 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " ID N", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( !threadset[i].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  if( Tcl_GetInt(interp, argv[2], &n) ) return TCL_ERROR;
-  thread_wait(&threadset[i]);
-  if( n<0 || n>=threadset[i].argc ){
-    Tcl_AppendResult(interp, "column number out of range", 0);
-    return TCL_ERROR;
-  }
-  Tcl_AppendResult(interp, threadset[i].colv[n], 0);
-  return TCL_OK;
+    if (argc != 3)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " ID N", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (!threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    if (Tcl_GetInt(interp, argv[2], &n)) return TCL_ERROR;
+    thread_wait(&threadset[i]);
+    if (n < 0 || n >= threadset[i].argc)
+    {
+        Tcl_AppendResult(interp, "column number out of range", 0);
+        return TCL_ERROR;
+    }
+    Tcl_AppendResult(interp, threadset[i].colv[n], 0);
+    return TCL_OK;
 }
 
 /*
@@ -352,56 +390,112 @@ static int tcl_thread_colname(
 ** result code from that operation.
 */
 static int tcl_thread_result(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
-  const char *zName;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
+    const char *zName;
 
-  if( argc!=2 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " ID", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( !threadset[i].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  thread_wait(&threadset[i]);
-  switch( threadset[i].rc ){
-    case SQLITE_OK:         zName = "SQLITE_OK";          break;
-    case SQLITE_ERROR:      zName = "SQLITE_ERROR";       break;
-    case SQLITE_PERM:       zName = "SQLITE_PERM";        break;
-    case SQLITE_ABORT:      zName = "SQLITE_ABORT";       break;
-    case SQLITE_BUSY:       zName = "SQLITE_BUSY";        break;
-    case SQLITE_LOCKED:     zName = "SQLITE_LOCKED";      break;
-    case SQLITE_NOMEM:      zName = "SQLITE_NOMEM";       break;
-    case SQLITE_READONLY:   zName = "SQLITE_READONLY";    break;
-    case SQLITE_INTERRUPT:  zName = "SQLITE_INTERRUPT";   break;
-    case SQLITE_IOERR:      zName = "SQLITE_IOERR";       break;
-    case SQLITE_CORRUPT:    zName = "SQLITE_CORRUPT";     break;
-    case SQLITE_FULL:       zName = "SQLITE_FULL";        break;
-    case SQLITE_CANTOPEN:   zName = "SQLITE_CANTOPEN";    break;
-    case SQLITE_PROTOCOL:   zName = "SQLITE_PROTOCOL";    break;
-    case SQLITE_EMPTY:      zName = "SQLITE_EMPTY";       break;
-    case SQLITE_SCHEMA:     zName = "SQLITE_SCHEMA";      break;
-    case SQLITE_CONSTRAINT: zName = "SQLITE_CONSTRAINT";  break;
-    case SQLITE_MISMATCH:   zName = "SQLITE_MISMATCH";    break;
-    case SQLITE_MISUSE:     zName = "SQLITE_MISUSE";      break;
-    case SQLITE_NOLFS:      zName = "SQLITE_NOLFS";       break;
-    case SQLITE_AUTH:       zName = "SQLITE_AUTH";        break;
-    case SQLITE_FORMAT:     zName = "SQLITE_FORMAT";      break;
-    case SQLITE_RANGE:      zName = "SQLITE_RANGE";       break;
-    case SQLITE_ROW:        zName = "SQLITE_ROW";         break;
-    case SQLITE_DONE:       zName = "SQLITE_DONE";        break;
-    default:                zName = "SQLITE_Unknown";     break;
-  }
-  Tcl_AppendResult(interp, zName, 0);
-  return TCL_OK;
+    if (argc != 2)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " ID", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (!threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    thread_wait(&threadset[i]);
+    switch (threadset[i].rc)
+    {
+        case SQLITE_OK:
+            zName = "SQLITE_OK";
+            break;
+        case SQLITE_ERROR:
+            zName = "SQLITE_ERROR";
+            break;
+        case SQLITE_PERM:
+            zName = "SQLITE_PERM";
+            break;
+        case SQLITE_ABORT:
+            zName = "SQLITE_ABORT";
+            break;
+        case SQLITE_BUSY:
+            zName = "SQLITE_BUSY";
+            break;
+        case SQLITE_LOCKED:
+            zName = "SQLITE_LOCKED";
+            break;
+        case SQLITE_NOMEM:
+            zName = "SQLITE_NOMEM";
+            break;
+        case SQLITE_READONLY:
+            zName = "SQLITE_READONLY";
+            break;
+        case SQLITE_INTERRUPT:
+            zName = "SQLITE_INTERRUPT";
+            break;
+        case SQLITE_IOERR:
+            zName = "SQLITE_IOERR";
+            break;
+        case SQLITE_CORRUPT:
+            zName = "SQLITE_CORRUPT";
+            break;
+        case SQLITE_FULL:
+            zName = "SQLITE_FULL";
+            break;
+        case SQLITE_CANTOPEN:
+            zName = "SQLITE_CANTOPEN";
+            break;
+        case SQLITE_PROTOCOL:
+            zName = "SQLITE_PROTOCOL";
+            break;
+        case SQLITE_EMPTY:
+            zName = "SQLITE_EMPTY";
+            break;
+        case SQLITE_SCHEMA:
+            zName = "SQLITE_SCHEMA";
+            break;
+        case SQLITE_CONSTRAINT:
+            zName = "SQLITE_CONSTRAINT";
+            break;
+        case SQLITE_MISMATCH:
+            zName = "SQLITE_MISMATCH";
+            break;
+        case SQLITE_MISUSE:
+            zName = "SQLITE_MISUSE";
+            break;
+        case SQLITE_NOLFS:
+            zName = "SQLITE_NOLFS";
+            break;
+        case SQLITE_AUTH:
+            zName = "SQLITE_AUTH";
+            break;
+        case SQLITE_FORMAT:
+            zName = "SQLITE_FORMAT";
+            break;
+        case SQLITE_RANGE:
+            zName = "SQLITE_RANGE";
+            break;
+        case SQLITE_ROW:
+            zName = "SQLITE_ROW";
+            break;
+        case SQLITE_DONE:
+            zName = "SQLITE_DONE";
+            break;
+        default:
+            zName = "SQLITE_Unknown";
+            break;
+    }
+    Tcl_AppendResult(interp, zName, 0);
+    return TCL_OK;
 }
 
 /*
@@ -411,43 +505,49 @@ static int tcl_thread_result(
 ** error string.
 */
 static int tcl_thread_error(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
 
-  if( argc!=2 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " ID", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( !threadset[i].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  thread_wait(&threadset[i]);
-  Tcl_AppendResult(interp, threadset[i].zErr, 0);
-  return TCL_OK;
+    if (argc != 2)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " ID", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (!threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    thread_wait(&threadset[i]);
+    Tcl_AppendResult(interp, threadset[i].zErr, 0);
+    return TCL_OK;
 }
 
 /*
 ** This procedure runs in the thread to compile an SQL statement.
 */
-static void do_compile(Thread *p){
-  if( p->db==0 ){
-    p->zErr = p->zStaticErr = "no database is open";
-    p->rc = SQLITE_ERROR;
-    return;
-  }
-  if( p->pStmt ){
-    sqlite3_finalize(p->pStmt);
-    p->pStmt = 0;
-  }
-  p->rc = sqlite3_prepare(p->db, p->zArg, -1, &p->pStmt, 0);
+static void do_compile(Thread *p)
+{
+    if (p->db == 0)
+    {
+        p->zErr = p->zStaticErr = "no database is open";
+        p->rc = SQLITE_ERROR;
+        return;
+    }
+    if (p->pStmt)
+    {
+        sqlite3_finalize(p->pStmt);
+        p->pStmt = 0;
+    }
+    p->rc = sqlite3_prepare(p->db, p->zArg, -1, &p->pStmt, 0);
 }
 
 /*
@@ -456,51 +556,59 @@ static void do_compile(Thread *p){
 ** Compile a new virtual machine.
 */
 static int tcl_thread_compile(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
-  if( argc!=3 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " ID SQL", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( !threadset[i].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  thread_wait(&threadset[i]);
-  threadset[i].xOp = do_compile;
-  sqlite3_free(threadset[i].zArg);
-  threadset[i].zArg = sqlite3_mprintf("%s", argv[2]);
-  threadset[i].opnum++;
-  return TCL_OK;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
+    if (argc != 3)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " ID SQL", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (!threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    thread_wait(&threadset[i]);
+    threadset[i].xOp = do_compile;
+    sqlite3_free(threadset[i].zArg);
+    threadset[i].zArg = sqlite3_mprintf("%s", argv[2]);
+    threadset[i].opnum++;
+    return TCL_OK;
 }
 
 /*
 ** This procedure runs in the thread to step the virtual machine.
 */
-static void do_step(Thread *p){
-  int i;
-  if( p->pStmt==0 ){
-    p->zErr = p->zStaticErr = "no virtual machine available";
-    p->rc = SQLITE_ERROR;
-    return;
-  }
-  p->rc = sqlite3_step(p->pStmt);
-  if( p->rc==SQLITE_ROW ){
-    p->argc = sqlite3_column_count(p->pStmt);
-    for(i=0; i<sqlite3_data_count(p->pStmt); i++){
-      p->argv[i] = (char*)sqlite3_column_text(p->pStmt, i);
+static void do_step(Thread *p)
+{
+    int i;
+    if (p->pStmt == 0)
+    {
+        p->zErr = p->zStaticErr = "no virtual machine available";
+        p->rc = SQLITE_ERROR;
+        return;
     }
-    for(i=0; i<p->argc; i++){
-      p->colv[i] = sqlite3_column_name(p->pStmt, i);
+    p->rc = sqlite3_step(p->pStmt);
+    if (p->rc == SQLITE_ROW)
+    {
+        p->argc = sqlite3_column_count(p->pStmt);
+        for (i = 0; i < sqlite3_data_count(p->pStmt); i++)
+        {
+            p->argv[i] = (char*)sqlite3_column_text(p->pStmt, i);
+        }
+        for (i = 0; i < p->argc; i++)
+        {
+            p->colv[i] = sqlite3_column_name(p->pStmt, i);
+        }
     }
-  }
 }
 
 /*
@@ -509,40 +617,45 @@ static void do_step(Thread *p){
 ** Advance the virtual machine by one step
 */
 static int tcl_thread_step(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
-  if( argc!=2 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " IDL", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( !threadset[i].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  thread_wait(&threadset[i]);
-  threadset[i].xOp = do_step;
-  threadset[i].opnum++;
-  return TCL_OK;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
+    if (argc != 2)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " IDL", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (!threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    thread_wait(&threadset[i]);
+    threadset[i].xOp = do_step;
+    threadset[i].opnum++;
+    return TCL_OK;
 }
 
 /*
 ** This procedure runs in the thread to finalize a virtual machine.
 */
-static void do_finalize(Thread *p){
-  if( p->pStmt==0 ){
-    p->zErr = p->zStaticErr = "no virtual machine available";
-    p->rc = SQLITE_ERROR;
-    return;
-  }
-  p->rc = sqlite3_finalize(p->pStmt);
-  p->pStmt = 0;
+static void do_finalize(Thread *p)
+{
+    if (p->pStmt == 0)
+    {
+        p->zErr = p->zStaticErr = "no virtual machine available";
+        p->rc = SQLITE_ERROR;
+        return;
+    }
+    p->rc = sqlite3_finalize(p->pStmt);
+    p->pStmt = 0;
 }
 
 /*
@@ -551,29 +664,32 @@ static void do_finalize(Thread *p){
 ** Finalize the virtual machine.
 */
 static int tcl_thread_finalize(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
-  if( argc!=2 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " IDL", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( !threadset[i].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  thread_wait(&threadset[i]);
-  threadset[i].xOp = do_finalize;
-  sqlite3_free(threadset[i].zArg);
-  threadset[i].zArg = 0;
-  threadset[i].opnum++;
-  return TCL_OK;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
+    if (argc != 2)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " IDL", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (!threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    thread_wait(&threadset[i]);
+    threadset[i].xOp = do_finalize;
+    sqlite3_free(threadset[i].zArg);
+    threadset[i].zArg = 0;
+    threadset[i].opnum++;
+    return TCL_OK;
 }
 
 /*
@@ -582,36 +698,40 @@ static int tcl_thread_finalize(
 ** Interchange the sqlite* pointer between two threads.
 */
 static int tcl_thread_swap(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i, j;
-  sqlite3 *temp;
-  if( argc!=3 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " ID1 ID2", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( !threadset[i].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  thread_wait(&threadset[i]);
-  j = parse_thread_id(interp, argv[2]);
-  if( j<0 ) return TCL_ERROR;
-  if( !threadset[j].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  thread_wait(&threadset[j]);
-  temp = threadset[i].db;
-  threadset[i].db = threadset[j].db;
-  threadset[j].db = temp;
-  return TCL_OK;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i, j;
+    sqlite3 *temp;
+    if (argc != 3)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " ID1 ID2", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (!threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    thread_wait(&threadset[i]);
+    j = parse_thread_id(interp, argv[2]);
+    if (j < 0) return TCL_ERROR;
+    if (!threadset[j].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    thread_wait(&threadset[j]);
+    temp = threadset[i].db;
+    threadset[i].db = threadset[j].db;
+    threadset[j].db = temp;
+    return TCL_OK;
 }
 
 /*
@@ -622,30 +742,33 @@ static int tcl_thread_swap(
 ** can be stopped and the connection can be used by the main thread.
 */
 static int tcl_thread_db_get(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
-  char zBuf[100];
-  extern int sqlite3TestMakePointerStr(Tcl_Interp*, char*, void*);
-  if( argc!=2 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " ID", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( !threadset[i].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  thread_wait(&threadset[i]);
-  sqlite3TestMakePointerStr(interp, zBuf, threadset[i].db);
-  threadset[i].db = 0;
-  Tcl_AppendResult(interp, zBuf, (char*)0);
-  return TCL_OK;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
+    char zBuf[100];
+    extern int sqlite3TestMakePointerStr(Tcl_Interp*, char*, void*);
+    if (argc != 2)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " ID", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (!threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    thread_wait(&threadset[i]);
+    sqlite3TestMakePointerStr(interp, zBuf, threadset[i].db);
+    threadset[i].db = 0;
+    Tcl_AppendResult(interp, zBuf, (char*)0);
+    return TCL_OK;
 }
 
 /*
@@ -653,95 +776,108 @@ static int tcl_thread_db_get(
 **
 */
 static int tcl_thread_db_put(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
-  extern int sqlite3TestMakePointerStr(Tcl_Interp*, char*, void*);
-  extern void *sqlite3TestTextToPtr(const char *);
-  if( argc!=3 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " ID DB", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( !threadset[i].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  thread_wait(&threadset[i]);
-  assert( !threadset[i].db );
-  threadset[i].db = (sqlite3*)sqlite3TestTextToPtr(argv[2]);
-  return TCL_OK;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
+    extern int sqlite3TestMakePointerStr(Tcl_Interp*, char*, void*);
+    extern void *sqlite3TestTextToPtr(const char *);
+    if (argc != 3)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " ID DB", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (!threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    thread_wait(&threadset[i]);
+    assert(!threadset[i].db);
+    threadset[i].db = (sqlite3*)sqlite3TestTextToPtr(argv[2]);
+    return TCL_OK;
 }
 
 /*
 ** Usage: thread_stmt_get ID
 **
 ** Return the database stmt pointer for the given thread.  Then
-** remove the pointer from the thread itself. 
+** remove the pointer from the thread itself.
 */
 static int tcl_thread_stmt_get(
-  void *NotUsed,
-  Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
-  int argc,              /* Number of arguments */
-  const char **argv      /* Text of each argument */
-){
-  int i;
-  char zBuf[100];
-  extern int sqlite3TestMakePointerStr(Tcl_Interp*, char*, void*);
-  if( argc!=2 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-       " ID", 0);
-    return TCL_ERROR;
-  }
-  i = parse_thread_id(interp, argv[1]);
-  if( i<0 ) return TCL_ERROR;
-  if( !threadset[i].busy ){
-    Tcl_AppendResult(interp, "no such thread", 0);
-    return TCL_ERROR;
-  }
-  thread_wait(&threadset[i]);
-  sqlite3TestMakePointerStr(interp, zBuf, threadset[i].pStmt);
-  threadset[i].pStmt = 0;
-  Tcl_AppendResult(interp, zBuf, (char*)0);
-  return TCL_OK;
+    void *NotUsed,
+    Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
+    int argc,              /* Number of arguments */
+    const char **argv      /* Text of each argument */
+)
+{
+    int i;
+    char zBuf[100];
+    extern int sqlite3TestMakePointerStr(Tcl_Interp*, char*, void*);
+    if (argc != 2)
+    {
+        Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                         " ID", 0);
+        return TCL_ERROR;
+    }
+    i = parse_thread_id(interp, argv[1]);
+    if (i < 0) return TCL_ERROR;
+    if (!threadset[i].busy)
+    {
+        Tcl_AppendResult(interp, "no such thread", 0);
+        return TCL_ERROR;
+    }
+    thread_wait(&threadset[i]);
+    sqlite3TestMakePointerStr(interp, zBuf, threadset[i].pStmt);
+    threadset[i].pStmt = 0;
+    Tcl_AppendResult(interp, zBuf, (char*)0);
+    return TCL_OK;
 }
 
 /*
 ** Register commands with the TCL interpreter.
 */
-int Sqlitetest4_Init(Tcl_Interp *interp){
-  static struct {
-     char *zName;
-     Tcl_CmdProc *xProc;
-  } aCmd[] = {
-     { "thread_create",     (Tcl_CmdProc*)tcl_thread_create     },
-     { "thread_wait",       (Tcl_CmdProc*)tcl_thread_wait       },
-     { "thread_halt",       (Tcl_CmdProc*)tcl_thread_halt       },
-     { "thread_argc",       (Tcl_CmdProc*)tcl_thread_argc       },
-     { "thread_argv",       (Tcl_CmdProc*)tcl_thread_argv       },
-     { "thread_colname",    (Tcl_CmdProc*)tcl_thread_colname    },
-     { "thread_result",     (Tcl_CmdProc*)tcl_thread_result     },
-     { "thread_error",      (Tcl_CmdProc*)tcl_thread_error      },
-     { "thread_compile",    (Tcl_CmdProc*)tcl_thread_compile    },
-     { "thread_step",       (Tcl_CmdProc*)tcl_thread_step       },
-     { "thread_finalize",   (Tcl_CmdProc*)tcl_thread_finalize   },
-     { "thread_swap",       (Tcl_CmdProc*)tcl_thread_swap       },
-     { "thread_db_get",     (Tcl_CmdProc*)tcl_thread_db_get     },
-     { "thread_db_put",     (Tcl_CmdProc*)tcl_thread_db_put     },
-     { "thread_stmt_get",   (Tcl_CmdProc*)tcl_thread_stmt_get   },
-  };
-  int i;
+int Sqlitetest4_Init(Tcl_Interp *interp)
+{
+    static struct
+    {
+        char *zName;
+        Tcl_CmdProc *xProc;
+    } aCmd[] =
+    {
+        { "thread_create", (Tcl_CmdProc*)tcl_thread_create     },
+        { "thread_wait", (Tcl_CmdProc*)tcl_thread_wait       },
+        { "thread_halt", (Tcl_CmdProc*)tcl_thread_halt       },
+        { "thread_argc", (Tcl_CmdProc*)tcl_thread_argc       },
+        { "thread_argv", (Tcl_CmdProc*)tcl_thread_argv       },
+        { "thread_colname", (Tcl_CmdProc*)tcl_thread_colname    },
+        { "thread_result", (Tcl_CmdProc*)tcl_thread_result     },
+        { "thread_error", (Tcl_CmdProc*)tcl_thread_error      },
+        { "thread_compile", (Tcl_CmdProc*)tcl_thread_compile    },
+        { "thread_step", (Tcl_CmdProc*)tcl_thread_step       },
+        { "thread_finalize", (Tcl_CmdProc*)tcl_thread_finalize   },
+        { "thread_swap", (Tcl_CmdProc*)tcl_thread_swap       },
+        { "thread_db_get", (Tcl_CmdProc*)tcl_thread_db_get     },
+        { "thread_db_put", (Tcl_CmdProc*)tcl_thread_db_put     },
+        { "thread_stmt_get", (Tcl_CmdProc*)tcl_thread_stmt_get   },
+    };
+    int i;
 
-  for(i=0; i<sizeof(aCmd)/sizeof(aCmd[0]); i++){
-    Tcl_CreateCommand(interp, aCmd[i].zName, aCmd[i].xProc, 0, 0);
-  }
-  return TCL_OK;
+    for (i = 0; i < sizeof(aCmd) / sizeof(aCmd[0]); i++)
+    {
+        Tcl_CreateCommand(interp, aCmd[i].zName, aCmd[i].xProc, 0, 0);
+    }
+    return TCL_OK;
 }
 #else
-int Sqlitetest4_Init(Tcl_Interp *interp){ return TCL_OK; }
+int Sqlitetest4_Init(Tcl_Interp *interp)
+{
+    return TCL_OK;
+}
 #endif /* SQLITE_OS_UNIX */

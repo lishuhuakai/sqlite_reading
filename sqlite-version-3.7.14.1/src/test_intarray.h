@@ -94,9 +94,9 @@ typedef struct sqlite3_intarray sqlite3_intarray;
 ** by the system when the database connection is closed.
 */
 int sqlite3_intarray_create(
-  sqlite3 *db,
-  const char *zName,
-  sqlite3_intarray **ppReturn
+    sqlite3 *db,
+    const char *zName,
+    sqlite3_intarray **ppReturn
 );
 
 /*
@@ -107,8 +107,8 @@ int sqlite3_intarray_create(
 ** array does change or is deallocated undefined behavior will result.
 */
 int sqlite3_intarray_bind(
-  sqlite3_intarray *pIntArray,   /* The intarray object to bind to */
-  int nElements,                 /* Number of elements in the intarray */
-  sqlite3_int64 *aElements,      /* Content of the intarray */
-  void (*xFree)(void*)           /* How to dispose of the intarray when done */
+    sqlite3_intarray *pIntArray,   /* The intarray object to bind to */
+    int nElements,                 /* Number of elements in the intarray */
+    sqlite3_int64 *aElements,      /* Content of the intarray */
+    void (*xFree)(void*)           /* How to dispose of the intarray when done */
 );

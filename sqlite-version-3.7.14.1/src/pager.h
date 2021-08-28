@@ -18,12 +18,12 @@
 #define _PAGER_H_
 
 /*
-** Default maximum size for persistent journal files. A negative 
-** value means no limit. This value may be overridden using the 
+** Default maximum size for persistent journal files. A negative
+** value means no limit. This value may be overridden using the
 ** sqlite3PagerJournalSizeLimit() API. See also "PRAGMA journal_size_limit".
 */
 #ifndef SQLITE_DEFAULT_JOURNAL_SIZE_LIMIT
-  #define SQLITE_DEFAULT_JOURNAL_SIZE_LIMIT -1
+#define SQLITE_DEFAULT_JOURNAL_SIZE_LIMIT -1
 #endif
 
 /*
@@ -45,9 +45,9 @@ typedef struct PgHdr DbPage;
 /*
 ** Page number PAGER_MJ_PGNO is never used in an SQLite database (it is
 ** reserved for working around a windows/posix incompatibility). It is
-** used in the journal to signify that the remainder of the journal file 
+** used in the journal to signify that the remainder of the journal file
 ** is devoted to storing a master journal name - there are no more pages to
-** roll back. See comments for function writeMasterJournal() in pager.c 
+** roll back. See comments for function writeMasterJournal() in pager.c
 ** for details.
 */
 #define PAGER_MJ_PGNO(x) ((Pgno)((PENDING_BYTE/((x)->pageSize))+1))
@@ -68,7 +68,7 @@ typedef struct PgHdr DbPage;
 #define PAGER_LOCKINGMODE_EXCLUSIVE   1
 
 /*
-** Numeric constants that encode the journalmode.  
+** Numeric constants that encode the journalmode.
 */
 #define PAGER_JOURNALMODE_QUERY     (-1)  /* Query the value of journalmode */
 #define PAGER_JOURNALMODE_DELETE      0   /* Commit by deleting journal file */
@@ -80,19 +80,19 @@ typedef struct PgHdr DbPage;
 
 /*
 ** The remainder of this file contains the declarations of the functions
-** that make up the Pager sub-system API. See source code comments for 
+** that make up the Pager sub-system API. See source code comments for
 ** a detailed description of each routine.
 */
 
-/* Open and close a Pager connection. */ 
+/* Open and close a Pager connection. */
 int sqlite3PagerOpen(
-  sqlite3_vfs*,
-  Pager **ppPager,
-  const char*,
-  int,
-  int,
-  int,
-  void(*)(DbPage*)
+    sqlite3_vfs*,
+    Pager **ppPager,
+    const char*,
+    int,
+    int,
+    int,
+    void(*)(DbPage*)
 );
 int sqlite3PagerClose(Pager *pPager);
 int sqlite3PagerReadFileheader(Pager*, int, unsigned char*);
@@ -103,7 +103,7 @@ int sqlite3PagerSetPagesize(Pager*, u32*, int);
 int sqlite3PagerMaxPageCount(Pager*, int);
 void sqlite3PagerSetCachesize(Pager*, int);
 void sqlite3PagerShrink(Pager*);
-void sqlite3PagerSetSafetyLevel(Pager*,int,int,int);
+void sqlite3PagerSetSafetyLevel(Pager*, int, int, int);
 int sqlite3PagerLockingMode(Pager *, int);
 int sqlite3PagerSetJournalMode(Pager *, int);
 int sqlite3PagerGetJournalMode(Pager*);
@@ -111,7 +111,7 @@ int sqlite3PagerOkToChangeJournalMode(Pager*);
 i64 sqlite3PagerJournalSizeLimit(Pager *, i64);
 sqlite3_backup **sqlite3PagerBackupPtr(Pager*);
 
-/* Functions used to obtain and release page references. */ 
+/* Functions used to obtain and release page references. */
 int sqlite3PagerAcquire(Pager *pPager, Pgno pgno, DbPage **ppPage, int clrFlag);
 #define sqlite3PagerGet(A,B,C) sqlite3PagerAcquire(A,B,C,0)
 DbPage *sqlite3PagerLookup(Pager *pPager, Pgno pgno);
@@ -121,15 +121,15 @@ void sqlite3PagerUnref(DbPage*);
 /* Operations on page references. */
 int sqlite3PagerWrite(DbPage*);
 void sqlite3PagerDontWrite(DbPage*);
-int sqlite3PagerMovepage(Pager*,DbPage*,Pgno,int);
+int sqlite3PagerMovepage(Pager*, DbPage*, Pgno, int);
 int sqlite3PagerPageRefcount(DbPage*);
-void *sqlite3PagerGetData(DbPage *); 
-void *sqlite3PagerGetExtra(DbPage *); 
+void *sqlite3PagerGetData(DbPage *);
+void *sqlite3PagerGetExtra(DbPage *);
 
 /* Functions used to manage pager transactions and savepoints. */
 void sqlite3PagerPagecount(Pager*, int*);
 int sqlite3PagerBegin(Pager*, int exFlag, int);
-int sqlite3PagerCommitPhaseOne(Pager*,const char *zMaster, int);
+int sqlite3PagerCommitPhaseOne(Pager*, const char *zMaster, int);
 int sqlite3PagerExclusiveLock(Pager*);
 int sqlite3PagerSync(Pager *pPager);
 int sqlite3PagerCommitPhaseTwo(Pager*);
@@ -144,7 +144,7 @@ int sqlite3PagerWalCallback(Pager *pPager);
 int sqlite3PagerOpenWal(Pager *pPager, int *pisOpen);
 int sqlite3PagerCloseWal(Pager *pPager);
 #ifdef SQLITE_ENABLE_ZIPVFS
-  int sqlite3PagerWalFramesize(Pager *pPager);
+int sqlite3PagerWalFramesize(Pager *pPager);
 #endif
 
 /* Functions used to query pager state and configuration. */
@@ -162,7 +162,7 @@ void sqlite3PagerCacheStat(Pager *, int, int, int *);
 void sqlite3PagerClearCache(Pager *);
 
 /* Functions used to truncate the database file. */
-void sqlite3PagerTruncateImage(Pager*,Pgno);
+void sqlite3PagerTruncateImage(Pager*, Pgno);
 
 #if defined(SQLITE_HAS_CODEC) && !defined(SQLITE_OMIT_WAL)
 void *sqlite3PagerCodec(DbPage *);
@@ -170,14 +170,14 @@ void *sqlite3PagerCodec(DbPage *);
 
 /* Functions to support testing and debugging. */
 #if !defined(NDEBUG) || defined(SQLITE_TEST)
-  Pgno sqlite3PagerPagenumber(DbPage*);
-  int sqlite3PagerIswriteable(DbPage*);
+Pgno sqlite3PagerPagenumber(DbPage*);
+int sqlite3PagerIswriteable(DbPage*);
 #endif
 #ifdef SQLITE_TEST
-  int *sqlite3PagerStats(Pager*);
-  void sqlite3PagerRefdump(Pager*);
-  void disable_simulated_io_errors(void);
-  void enable_simulated_io_errors(void);
+int *sqlite3PagerStats(Pager*);
+void sqlite3PagerRefdump(Pager*);
+void disable_simulated_io_errors(void);
+void enable_simulated_io_errors(void);
 #else
 # define disable_simulated_io_errors()
 # define enable_simulated_io_errors()

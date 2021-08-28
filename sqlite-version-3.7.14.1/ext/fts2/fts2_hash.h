@@ -29,28 +29,32 @@ typedef struct fts2HashElem fts2HashElem;
 ** accessing this structure are really macros, so we can't really make
 ** this structure opaque.
 */
-struct fts2Hash {
-  char keyClass;          /* HASH_INT, _POINTER, _STRING, _BINARY */
-  char copyKey;           /* True if copy of key made on insert */
-  int count;              /* Number of entries in this table */
-  fts2HashElem *first;    /* The first element of the array */
-  int htsize;             /* Number of buckets in the hash table */
-  struct _fts2ht {        /* the hash table */
-    int count;               /* Number of entries with this hash */
-    fts2HashElem *chain;     /* Pointer to first entry with this hash */
-  } *ht;
+struct fts2Hash
+{
+    char keyClass;          /* HASH_INT, _POINTER, _STRING, _BINARY */
+    char copyKey;           /* True if copy of key made on insert */
+    int count;              /* Number of entries in this table */
+    fts2HashElem *first;    /* The first element of the array */
+    int htsize;             /* Number of buckets in the hash table */
+    struct _fts2ht          /* the hash table */
+    {
+        int count;               /* Number of entries with this hash */
+        fts2HashElem *chain;     /* Pointer to first entry with this hash */
+    } *ht;
 };
 
-/* Each element in the hash table is an instance of the following 
+/* Each element in the hash table is an instance of the following
 ** structure.  All elements are stored on a single doubly-linked list.
 **
 ** Again, this structure is intended to be opaque, but it can't really
 ** be opaque because it is used by macros.
 */
-struct fts2HashElem {
-  fts2HashElem *next, *prev; /* Next and previous elements in the table */
-  void *data;                /* Data associated with this element */
-  void *pKey; int nKey;      /* Key associated with this element */
+struct fts2HashElem
+{
+    fts2HashElem *next, *prev; /* Next and previous elements in the table */
+    void *data;                /* Data associated with this element */
+    void *pKey;
+    int nKey;      /* Key associated with this element */
 };
 
 /*
@@ -60,10 +64,10 @@ struct fts2HashElem {
 **                           (including the null-terminator, if any).  Case
 **                           is respected in comparisons.
 **
-**   FTS2_HASH_BINARY        pKey points to binary data nKey bytes long. 
+**   FTS2_HASH_BINARY        pKey points to binary data nKey bytes long.
 **                           memcmp() is used to compare keys.
 **
-** A copy of the key is made if the copyKey parameter to fts2HashInit is 1.  
+** A copy of the key is made if the copyKey parameter to fts2HashInit is 1.
 */
 #define FTS2_HASH_STRING    1
 #define FTS2_HASH_BINARY    2

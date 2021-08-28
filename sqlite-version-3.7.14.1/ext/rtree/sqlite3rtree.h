@@ -29,14 +29,14 @@ typedef struct sqlite3_rtree_geometry sqlite3_rtree_geometry;
 **   SELECT ... FROM <rtree> WHERE <rtree col> MATCH $zGeom(... params ...)
 */
 int sqlite3_rtree_geometry_callback(
-  sqlite3 *db,
-  const char *zGeom,
+    sqlite3 *db,
+    const char *zGeom,
 #ifdef SQLITE_RTREE_INT_ONLY
-  int (*xGeom)(sqlite3_rtree_geometry*, int n, sqlite3_int64 *a, int *pRes),
+    int (*xGeom)(sqlite3_rtree_geometry*, int n, sqlite3_int64 *a, int *pRes),
 #else
-  int (*xGeom)(sqlite3_rtree_geometry*, int n, double *a, int *pRes),
+    int (*xGeom)(sqlite3_rtree_geometry*, int n, double *a, int *pRes),
 #endif
-  void *pContext
+    void *pContext
 );
 
 
@@ -44,12 +44,13 @@ int sqlite3_rtree_geometry_callback(
 ** A pointer to a structure of the following type is passed as the first
 ** argument to callbacks registered using rtree_geometry_callback().
 */
-struct sqlite3_rtree_geometry {
-  void *pContext;                 /* Copy of pContext passed to s_r_g_c() */
-  int nParam;                     /* Size of array aParam[] */
-  double *aParam;                 /* Parameters passed to SQL geom function */
-  void *pUser;                    /* Callback implementation user data */
-  void (*xDelUser)(void *);       /* Called by SQLite to clean up pUser */
+struct sqlite3_rtree_geometry
+{
+    void *pContext;                 /* Copy of pContext passed to s_r_g_c() */
+    int nParam;                     /* Size of array aParam[] */
+    double *aParam;                 /* Parameters passed to SQL geom function */
+    void *pUser;                    /* Callback implementation user data */
+    void (*xDelUser)(void *);       /* Called by SQLite to clean up pUser */
 };
 
 

@@ -22,7 +22,7 @@
 ** thereby avoiding a recompile of SQLite.
 **
 **
-** This source file demonstrates how to use SQLite to create an SQL database 
+** This source file demonstrates how to use SQLite to create an SQL database
 ** server thread in a multiple-threaded program.  One or more client threads
 ** send messages to the server thread and the server thread processes those
 ** messages in the order received and returns the results to the client.
@@ -38,7 +38,7 @@
 **         and used within the server thread.  Client calls to the database
 **         can be made from multiple threads (though not at the same time!)
 **
-**    (2)  Beginning with SQLite version 3.3.0, when two or more 
+**    (2)  Beginning with SQLite version 3.3.0, when two or more
 **         connections to the same database occur within the same thread,
 **         they can optionally share their database cache.  This reduces
 **         I/O and memory requirements.  Cache shared is controlled using
@@ -63,7 +63,7 @@
 **
 ** Note:  The extra features of version 3.3.0 described by points (2)
 ** through (4) above are only available if you compile without the
-** option -DSQLITE_OMIT_SHARED_CACHE. 
+** option -DSQLITE_OMIT_SHARED_CACHE.
 **
 ** Here is how the client/server approach works:  The database server
 ** thread is started on this procedure:
@@ -215,22 +215,23 @@
 #include "sqlite3.h"
 
 /*
-** Messages are passed from client to server and back again as 
+** Messages are passed from client to server and back again as
 ** instances of the following structure.
 */
 typedef struct SqlMessage SqlMessage;
-struct SqlMessage {
-  int op;                      /* Opcode for the message */
-  sqlite3 *pDb;                /* The SQLite connection */
-  sqlite3_stmt *pStmt;         /* A specific statement */
-  int errCode;                 /* Error code returned */
-  const char *zIn;             /* Input filename or SQL statement */
-  int nByte;                   /* Size of the zIn parameter for prepare() */
-  const char *zOut;            /* Tail of the SQL statement */
-  SqlMessage *pNext;           /* Next message in the queue */
-  SqlMessage *pPrev;           /* Previous message in the queue */
-  pthread_mutex_t clientMutex; /* Hold this mutex to access the message */
-  pthread_cond_t clientWakeup; /* Signal to wake up the client */
+struct SqlMessage
+{
+    int op;                      /* Opcode for the message */
+    sqlite3 *pDb;                /* The SQLite connection */
+    sqlite3_stmt *pStmt;         /* A specific statement */
+    int errCode;                 /* Error code returned */
+    const char *zIn;             /* Input filename or SQL statement */
+    int nByte;                   /* Size of the zIn parameter for prepare() */
+    const char *zOut;            /* Tail of the SQL statement */
+    SqlMessage *pNext;           /* Next message in the queue */
+    SqlMessage *pPrev;           /* Previous message in the queue */
+    pthread_mutex_t clientMutex; /* Hold this mutex to access the message */
+    pthread_cond_t clientWakeup; /* Signal to wake up the client */
 };
 
 /*
@@ -249,59 +250,66 @@ struct SqlMessage {
 ** State information about the server is stored in a static variable
 ** named "g" as follows:
 */
-static struct ServerState {
-  pthread_mutex_t queueMutex;   /* Hold this mutex to access the msg queue */
-  pthread_mutex_t serverMutex;  /* Held by the server while it is running */
-  pthread_cond_t serverWakeup;  /* Signal this condvar to wake up the server */
-  volatile int serverHalt;      /* Server halts itself when true */
-  SqlMessage *pQueueHead;       /* Head of the message queue */
-  SqlMessage *pQueueTail;       /* Tail of the message queue */
-} g = {
-  PTHREAD_MUTEX_INITIALIZER,
-  PTHREAD_MUTEX_INITIALIZER,
-  PTHREAD_COND_INITIALIZER,
+static struct ServerState
+{
+    pthread_mutex_t queueMutex;   /* Hold this mutex to access the msg queue */
+    pthread_mutex_t serverMutex;  /* Held by the server while it is running */
+    pthread_cond_t serverWakeup;  /* Signal this condvar to wake up the server */
+    volatile int serverHalt;      /* Server halts itself when true */
+    SqlMessage *pQueueHead;       /* Head of the message queue */
+    SqlMessage *pQueueTail;       /* Tail of the message queue */
+} g =
+{
+    PTHREAD_MUTEX_INITIALIZER,
+    PTHREAD_MUTEX_INITIALIZER,
+    PTHREAD_COND_INITIALIZER,
 };
 
 /*
 ** Send a message to the server.  Block until we get a reply.
 **
 ** The mutex and condition variable in the message are uninitialized
-** when this routine is called.  This routine takes care of 
+** when this routine is called.  This routine takes care of
 ** initializing them and destroying them when it has finished.
 */
-static void sendToServer(SqlMessage *pMsg){
-  /* Initialize the mutex and condition variable on the message
-  */
-  pthread_mutex_init(&pMsg->clientMutex, 0);
-  pthread_cond_init(&pMsg->clientWakeup, 0);
+static void sendToServer(SqlMessage *pMsg)
+{
+    /* Initialize the mutex and condition variable on the message
+    */
+    pthread_mutex_init(&pMsg->clientMutex, 0);
+    pthread_cond_init(&pMsg->clientWakeup, 0);
 
-  /* Add the message to the head of the server's message queue.
-  */
-  pthread_mutex_lock(&g.queueMutex);
-  pMsg->pNext = g.pQueueHead;
-  if( g.pQueueHead==0 ){
-    g.pQueueTail = pMsg;
-  }else{
-    g.pQueueHead->pPrev = pMsg;
-  }
-  pMsg->pPrev = 0;
-  g.pQueueHead = pMsg;
-  pthread_mutex_unlock(&g.queueMutex);
+    /* Add the message to the head of the server's message queue.
+    */
+    pthread_mutex_lock(&g.queueMutex);
+    pMsg->pNext = g.pQueueHead;
+    if (g.pQueueHead == 0)
+    {
+        g.pQueueTail = pMsg;
+    }
+    else
+    {
+        g.pQueueHead->pPrev = pMsg;
+    }
+    pMsg->pPrev = 0;
+    g.pQueueHead = pMsg;
+    pthread_mutex_unlock(&g.queueMutex);
 
-  /* Signal the server that the new message has be queued, then
-  ** block waiting for the server to process the message.
-  */
-  pthread_mutex_lock(&pMsg->clientMutex);
-  pthread_cond_signal(&g.serverWakeup);
-  while( pMsg->op!=MSG_Done ){
-    pthread_cond_wait(&pMsg->clientWakeup, &pMsg->clientMutex);
-  }
-  pthread_mutex_unlock(&pMsg->clientMutex);
+    /* Signal the server that the new message has be queued, then
+    ** block waiting for the server to process the message.
+    */
+    pthread_mutex_lock(&pMsg->clientMutex);
+    pthread_cond_signal(&g.serverWakeup);
+    while (pMsg->op != MSG_Done)
+    {
+        pthread_cond_wait(&pMsg->clientWakeup, &pMsg->clientMutex);
+    }
+    pthread_mutex_unlock(&pMsg->clientMutex);
 
-  /* Destroy the mutex and condition variable of the message.
-  */
-  pthread_mutex_destroy(&pMsg->clientMutex);
-  pthread_cond_destroy(&pMsg->clientWakeup);
+    /* Destroy the mutex and condition variable of the message.
+    */
+    pthread_mutex_destroy(&pMsg->clientMutex);
+    pthread_cond_destroy(&pMsg->clientWakeup);
 }
 
 /*
@@ -315,7 +323,7 @@ static void sendToServer(SqlMessage *pMsg){
 **        sqlite3_finalize
 **        sqlite3_close
 **
-** Clients should use the following client-side routines instead of 
+** Clients should use the following client-side routines instead of
 ** the core routines above.
 **
 **        sqlite3_client_open
@@ -329,58 +337,64 @@ static void sendToServer(SqlMessage *pMsg){
 ** sends that message to the server, waits for the server to process
 ** then message and return a response.
 */
-int sqlite3_client_open(const char *zDatabaseName, sqlite3 **ppDb){
-  SqlMessage msg;
-  msg.op = MSG_Open;
-  msg.zIn = zDatabaseName;
-  sendToServer(&msg);
-  *ppDb = msg.pDb;
-  return msg.errCode;
+int sqlite3_client_open(const char *zDatabaseName, sqlite3 **ppDb)
+{
+    SqlMessage msg;
+    msg.op = MSG_Open;
+    msg.zIn = zDatabaseName;
+    sendToServer(&msg);
+    *ppDb = msg.pDb;
+    return msg.errCode;
 }
 int sqlite3_client_prepare(
-  sqlite3 *pDb,
-  const char *zSql,
-  int nByte,
-  sqlite3_stmt **ppStmt,
-  const char **pzTail
-){
-  SqlMessage msg;
-  msg.op = MSG_Prepare;
-  msg.pDb = pDb;
-  msg.zIn = zSql;
-  msg.nByte = nByte;
-  sendToServer(&msg);
-  *ppStmt = msg.pStmt;
-  if( pzTail ) *pzTail = msg.zOut;
-  return msg.errCode;
+    sqlite3 *pDb,
+    const char *zSql,
+    int nByte,
+    sqlite3_stmt **ppStmt,
+    const char **pzTail
+)
+{
+    SqlMessage msg;
+    msg.op = MSG_Prepare;
+    msg.pDb = pDb;
+    msg.zIn = zSql;
+    msg.nByte = nByte;
+    sendToServer(&msg);
+    *ppStmt = msg.pStmt;
+    if (pzTail) *pzTail = msg.zOut;
+    return msg.errCode;
 }
-int sqlite3_client_step(sqlite3_stmt *pStmt){
-  SqlMessage msg;
-  msg.op = MSG_Step;
-  msg.pStmt = pStmt;
-  sendToServer(&msg);
-  return msg.errCode;
+int sqlite3_client_step(sqlite3_stmt *pStmt)
+{
+    SqlMessage msg;
+    msg.op = MSG_Step;
+    msg.pStmt = pStmt;
+    sendToServer(&msg);
+    return msg.errCode;
 }
-int sqlite3_client_reset(sqlite3_stmt *pStmt){
-  SqlMessage msg;
-  msg.op = MSG_Reset;
-  msg.pStmt = pStmt;
-  sendToServer(&msg);
-  return msg.errCode;
+int sqlite3_client_reset(sqlite3_stmt *pStmt)
+{
+    SqlMessage msg;
+    msg.op = MSG_Reset;
+    msg.pStmt = pStmt;
+    sendToServer(&msg);
+    return msg.errCode;
 }
-int sqlite3_client_finalize(sqlite3_stmt *pStmt){
-  SqlMessage msg;
-  msg.op = MSG_Finalize;
-  msg.pStmt = pStmt;
-  sendToServer(&msg);
-  return msg.errCode;
+int sqlite3_client_finalize(sqlite3_stmt *pStmt)
+{
+    SqlMessage msg;
+    msg.op = MSG_Finalize;
+    msg.pStmt = pStmt;
+    sendToServer(&msg);
+    return msg.errCode;
 }
-int sqlite3_client_close(sqlite3 *pDb){
-  SqlMessage msg;
-  msg.op = MSG_Close;
-  msg.pDb = pDb;
-  sendToServer(&msg);
-  return msg.errCode;
+int sqlite3_client_close(sqlite3 *pDb)
+{
+    SqlMessage msg;
+    msg.op = MSG_Close;
+    msg.pDb = pDb;
+    sendToServer(&msg);
+    return msg.errCode;
 }
 
 /*
@@ -390,71 +404,86 @@ int sqlite3_client_close(sqlite3 *pDb){
 ** for an example.  This procedure loops until g.serverHalt becomes
 ** true.
 */
-void *sqlite3_server(void *NotUsed){
-  if( pthread_mutex_trylock(&g.serverMutex) ){
-    return 0;  /* Another server is already running */
-  }
-  sqlite3_enable_shared_cache(1);
-  while( !g.serverHalt ){
-    SqlMessage *pMsg;
-
-    /* Remove the last message from the message queue.
-    */
-    pthread_mutex_lock(&g.queueMutex);
-    while( g.pQueueTail==0 && g.serverHalt==0 ){
-      pthread_cond_wait(&g.serverWakeup, &g.queueMutex);
+void *sqlite3_server(void *NotUsed)
+{
+    if (pthread_mutex_trylock(&g.serverMutex))
+    {
+        return 0;  /* Another server is already running */
     }
-    pMsg = g.pQueueTail;
-    if( pMsg ){
-      if( pMsg->pPrev ){
-        pMsg->pPrev->pNext = 0;
-      }else{
-        g.pQueueHead = 0;
-      }
-      g.pQueueTail = pMsg->pPrev;
-    }
-    pthread_mutex_unlock(&g.queueMutex);
-    if( pMsg==0 ) break;
+    sqlite3_enable_shared_cache(1);
+    while (!g.serverHalt)
+    {
+        SqlMessage *pMsg;
 
-    /* Process the message just removed
-    */
-    pthread_mutex_lock(&pMsg->clientMutex);
-    switch( pMsg->op ){
-      case MSG_Open: {
-        pMsg->errCode = sqlite3_open(pMsg->zIn, &pMsg->pDb);
-        break;
-      }
-      case MSG_Prepare: {
-        pMsg->errCode = sqlite3_prepare(pMsg->pDb, pMsg->zIn, pMsg->nByte,
-                                        &pMsg->pStmt, &pMsg->zOut);
-        break;
-      }
-      case MSG_Step: {
-        pMsg->errCode = sqlite3_step(pMsg->pStmt);
-        break;
-      }
-      case MSG_Reset: {
-        pMsg->errCode = sqlite3_reset(pMsg->pStmt);
-        break;
-      }
-      case MSG_Finalize: {
-        pMsg->errCode = sqlite3_finalize(pMsg->pStmt);
-        break;
-      }
-      case MSG_Close: {
-        pMsg->errCode = sqlite3_close(pMsg->pDb);
-        break;
-      }
-    }
+        /* Remove the last message from the message queue.
+        */
+        pthread_mutex_lock(&g.queueMutex);
+        while (g.pQueueTail == 0 && g.serverHalt == 0)
+        {
+            pthread_cond_wait(&g.serverWakeup, &g.queueMutex);
+        }
+        pMsg = g.pQueueTail;
+        if (pMsg)
+        {
+            if (pMsg->pPrev)
+            {
+                pMsg->pPrev->pNext = 0;
+            }
+            else
+            {
+                g.pQueueHead = 0;
+            }
+            g.pQueueTail = pMsg->pPrev;
+        }
+        pthread_mutex_unlock(&g.queueMutex);
+        if (pMsg == 0) break;
 
-    /* Signal the client that the message has been processed.
-    */
-    pMsg->op = MSG_Done;
-    pthread_mutex_unlock(&pMsg->clientMutex);
-    pthread_cond_signal(&pMsg->clientWakeup);
-  }
-  pthread_mutex_unlock(&g.serverMutex);
-  return 0;
+        /* Process the message just removed
+        */
+        pthread_mutex_lock(&pMsg->clientMutex);
+        switch (pMsg->op)
+        {
+            case MSG_Open:
+            {
+                pMsg->errCode = sqlite3_open(pMsg->zIn, &pMsg->pDb);
+                break;
+            }
+            case MSG_Prepare:
+            {
+                pMsg->errCode = sqlite3_prepare(pMsg->pDb, pMsg->zIn, pMsg->nByte,
+                                                &pMsg->pStmt, &pMsg->zOut);
+                break;
+            }
+            case MSG_Step:
+            {
+                pMsg->errCode = sqlite3_step(pMsg->pStmt);
+                break;
+            }
+            case MSG_Reset:
+            {
+                pMsg->errCode = sqlite3_reset(pMsg->pStmt);
+                break;
+            }
+            case MSG_Finalize:
+            {
+                pMsg->errCode = sqlite3_finalize(pMsg->pStmt);
+                break;
+            }
+            case MSG_Close:
+            {
+                pMsg->errCode = sqlite3_close(pMsg->pDb);
+                break;
+            }
+        }
+
+        /* Signal the client that the message has been processed.
+        */
+        pMsg->op = MSG_Done;
+        pthread_mutex_unlock(&pMsg->clientMutex);
+        pthread_cond_signal(&pMsg->clientWakeup);
+    }
+    pthread_mutex_unlock(&g.serverMutex);
+    return 0;
 }
 
 /*
@@ -462,14 +491,16 @@ void *sqlite3_server(void *NotUsed){
 ** is aleady a server thread running, the new thread will quickly
 ** die and this routine is effectively a no-op.
 */
-void sqlite3_server_start(void){
-  pthread_t x;
-  int rc;
-  g.serverHalt = 0;
-  rc = pthread_create(&x, 0, sqlite3_server, 0);
-  if( rc==0 ){
-    pthread_detach(x);
-  }
+void sqlite3_server_start(void)
+{
+    pthread_t x;
+    int rc;
+    g.serverHalt = 0;
+    rc = pthread_create(&x, 0, sqlite3_server, 0);
+    if (rc == 0)
+    {
+        pthread_detach(x);
+    }
 }
 
 /*
@@ -479,11 +510,12 @@ void sqlite3_server_start(void){
 ** This routine waits until the server has actually stopped before
 ** returning.
 */
-void sqlite3_server_stop(void){
-  g.serverHalt = 1;
-  pthread_cond_broadcast(&g.serverWakeup);
-  pthread_mutex_lock(&g.serverMutex);
-  pthread_mutex_unlock(&g.serverMutex);
+void sqlite3_server_stop(void)
+{
+    g.serverHalt = 1;
+    pthread_cond_broadcast(&g.serverWakeup);
+    pthread_mutex_lock(&g.serverMutex);
+    pthread_mutex_unlock(&g.serverMutex);
 }
 
 #endif /* SQLITE_OS_UNIX && SQLITE_THREADSAFE */

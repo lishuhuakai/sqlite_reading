@@ -24,7 +24,7 @@
 ** So we test the effects of a malloc() failing and the sqlite3OsXXX()
 ** function returning SQLITE_IOERR_NOMEM using the DO_OS_MALLOC_TEST macro.
 **
-** The following functions are instrumented for malloc() failure 
+** The following functions are instrumented for malloc() failure
 ** testing:
 **
 **     sqlite3OsRead()
@@ -43,14 +43,14 @@
 */
 #if defined(SQLITE_TEST)
 int sqlite3_memdebug_vfs_oom_test = 1;
-  #define DO_OS_MALLOC_TEST(x)                                       \
+#define DO_OS_MALLOC_TEST(x)                                       \
   if (sqlite3_memdebug_vfs_oom_test && (!x || !sqlite3IsMemJournal(x))) {  \
     void *pTstAlloc = sqlite3Malloc(10);                             \
     if (!pTstAlloc) return SQLITE_IOERR_NOMEM;                       \
     sqlite3_free(pTstAlloc);                                         \
   }
 #else
-  #define DO_OS_MALLOC_TEST(x)
+#define DO_OS_MALLOC_TEST(x)
 #endif
 
 /*
@@ -59,43 +59,54 @@ int sqlite3_memdebug_vfs_oom_test = 1;
 ** of this would be completely automatic if SQLite were coded using
 ** C++ instead of plain old C.
 */
-int sqlite3OsClose(sqlite3_file *pId){
-  int rc = SQLITE_OK;
-  if( pId->pMethods ){
-    rc = pId->pMethods->xClose(pId);
-    pId->pMethods = 0;
-  }
-  return rc;
+/* 对底层os函数的简单封装 */
+int sqlite3OsClose(sqlite3_file *pId)
+{
+    int rc = SQLITE_OK;
+    if (pId->pMethods)
+    {
+        rc = pId->pMethods->xClose(pId);
+        pId->pMethods = 0;
+    }
+    return rc;
 }
-int sqlite3OsRead(sqlite3_file *id, void *pBuf, int amt, i64 offset){
-  DO_OS_MALLOC_TEST(id);
-  return id->pMethods->xRead(id, pBuf, amt, offset);
+int sqlite3OsRead(sqlite3_file *id, void *pBuf, int amt, i64 offset)
+{
+    DO_OS_MALLOC_TEST(id);
+    return id->pMethods->xRead(id, pBuf, amt, offset);
 }
-int sqlite3OsWrite(sqlite3_file *id, const void *pBuf, int amt, i64 offset){
-  DO_OS_MALLOC_TEST(id);
-  return id->pMethods->xWrite(id, pBuf, amt, offset);
+int sqlite3OsWrite(sqlite3_file *id, const void *pBuf, int amt, i64 offset)
+{
+    DO_OS_MALLOC_TEST(id);
+    return id->pMethods->xWrite(id, pBuf, amt, offset);
 }
-int sqlite3OsTruncate(sqlite3_file *id, i64 size){
-  return id->pMethods->xTruncate(id, size);
+int sqlite3OsTruncate(sqlite3_file *id, i64 size)
+{
+    return id->pMethods->xTruncate(id, size);
 }
-int sqlite3OsSync(sqlite3_file *id, int flags){
-  DO_OS_MALLOC_TEST(id);
-  return id->pMethods->xSync(id, flags);
+int sqlite3OsSync(sqlite3_file *id, int flags)
+{
+    DO_OS_MALLOC_TEST(id);
+    return id->pMethods->xSync(id, flags);
 }
-int sqlite3OsFileSize(sqlite3_file *id, i64 *pSize){
-  DO_OS_MALLOC_TEST(id);
-  return id->pMethods->xFileSize(id, pSize);
+int sqlite3OsFileSize(sqlite3_file *id, i64 *pSize)
+{
+    DO_OS_MALLOC_TEST(id);
+    return id->pMethods->xFileSize(id, pSize);
 }
-int sqlite3OsLock(sqlite3_file *id, int lockType){
-  DO_OS_MALLOC_TEST(id);
-  return id->pMethods->xLock(id, lockType);
+int sqlite3OsLock(sqlite3_file *id, int lockType)
+{
+    DO_OS_MALLOC_TEST(id);
+    return id->pMethods->xLock(id, lockType);
 }
-int sqlite3OsUnlock(sqlite3_file *id, int lockType){
-  return id->pMethods->xUnlock(id, lockType);
+int sqlite3OsUnlock(sqlite3_file *id, int lockType)
+{
+    return id->pMethods->xUnlock(id, lockType);
 }
-int sqlite3OsCheckReservedLock(sqlite3_file *id, int *pResOut){
-  DO_OS_MALLOC_TEST(id);
-  return id->pMethods->xCheckReservedLock(id, pResOut);
+int sqlite3OsCheckReservedLock(sqlite3_file *id, int *pResOut)
+{
+    DO_OS_MALLOC_TEST(id);
+    return id->pMethods->xCheckReservedLock(id, pResOut);
 }
 
 /*
@@ -106,39 +117,47 @@ int sqlite3OsCheckReservedLock(sqlite3_file *id, int *pResOut){
 ** is only a hint and can be safely ignored.  The sqlite3OsFileControlHint()
 ** routine has no return value since the return value would be meaningless.
 */
-int sqlite3OsFileControl(sqlite3_file *id, int op, void *pArg){
-  DO_OS_MALLOC_TEST(id);
-  return id->pMethods->xFileControl(id, op, pArg);
+int sqlite3OsFileControl(sqlite3_file *id, int op, void *pArg)
+{
+    DO_OS_MALLOC_TEST(id);
+    return id->pMethods->xFileControl(id, op, pArg);
 }
-void sqlite3OsFileControlHint(sqlite3_file *id, int op, void *pArg){
-  (void)id->pMethods->xFileControl(id, op, pArg);
+void sqlite3OsFileControlHint(sqlite3_file *id, int op, void *pArg)
+{
+    (void)id->pMethods->xFileControl(id, op, pArg);
 }
-
-int sqlite3OsSectorSize(sqlite3_file *id){
-  int (*xSectorSize)(sqlite3_file*) = id->pMethods->xSectorSize;
-  return (xSectorSize ? xSectorSize(id) : SQLITE_DEFAULT_SECTOR_SIZE);
+/* 块大小 */
+int sqlite3OsSectorSize(sqlite3_file *id)
+{
+    int (*xSectorSize)(sqlite3_file*) = id->pMethods->xSectorSize;
+    return (xSectorSize ? xSectorSize(id) : SQLITE_DEFAULT_SECTOR_SIZE);
 }
-int sqlite3OsDeviceCharacteristics(sqlite3_file *id){
-  return id->pMethods->xDeviceCharacteristics(id);
+int sqlite3OsDeviceCharacteristics(sqlite3_file *id)
+{
+    return id->pMethods->xDeviceCharacteristics(id);
 }
-int sqlite3OsShmLock(sqlite3_file *id, int offset, int n, int flags){
-  return id->pMethods->xShmLock(id, offset, n, flags);
+int sqlite3OsShmLock(sqlite3_file *id, int offset, int n, int flags)
+{
+    return id->pMethods->xShmLock(id, offset, n, flags);
 }
-void sqlite3OsShmBarrier(sqlite3_file *id){
-  id->pMethods->xShmBarrier(id);
+void sqlite3OsShmBarrier(sqlite3_file *id)
+{
+    id->pMethods->xShmBarrier(id);
 }
-int sqlite3OsShmUnmap(sqlite3_file *id, int deleteFlag){
-  return id->pMethods->xShmUnmap(id, deleteFlag);
+int sqlite3OsShmUnmap(sqlite3_file *id, int deleteFlag)
+{
+    return id->pMethods->xShmUnmap(id, deleteFlag);
 }
 int sqlite3OsShmMap(
-  sqlite3_file *id,               /* Database file handle */
-  int iPage,
-  int pgsz,
-  int bExtend,                    /* True to extend file if necessary */
-  void volatile **pp              /* OUT: Pointer to mapping */
-){
-  DO_OS_MALLOC_TEST(id);
-  return id->pMethods->xShmMap(id, iPage, pgsz, bExtend, pp);
+    sqlite3_file *id,               /* Database file handle */
+    int iPage,
+    int pgsz,
+    int bExtend,                    /* True to extend file if necessary */
+    void volatile **pp              /* OUT: Pointer to mapping */
+)
+{
+    DO_OS_MALLOC_TEST(id);
+    return id->pMethods->xShmMap(id, iPage, pgsz, bExtend, pp);
 }
 
 /*
@@ -146,110 +165,130 @@ int sqlite3OsShmMap(
 ** VFS methods.
 */
 int sqlite3OsOpen(
-  sqlite3_vfs *pVfs, 
-  const char *zPath, 
-  sqlite3_file *pFile, 
-  int flags, 
-  int *pFlagsOut
-){
-  int rc;
-  DO_OS_MALLOC_TEST(0);
-  /* 0x87f7f is a mask of SQLITE_OPEN_ flags that are valid to be passed
-  ** down into the VFS layer.  Some SQLITE_OPEN_ flags (for example,
-  ** SQLITE_OPEN_FULLMUTEX or SQLITE_OPEN_SHAREDCACHE) are blocked before
-  ** reaching the VFS. */
-  rc = pVfs->xOpen(pVfs, zPath, pFile, flags & 0x87f7f, pFlagsOut);
-  assert( rc==SQLITE_OK || pFile->pMethods==0 );
-  return rc;
+    sqlite3_vfs *pVfs,
+    const char *zPath,
+    sqlite3_file *pFile,
+    int flags,
+    int *pFlagsOut
+)
+{
+    int rc;
+    DO_OS_MALLOC_TEST(0);
+    /* 0x87f7f is a mask of SQLITE_OPEN_ flags that are valid to be passed
+    ** down into the VFS layer.  Some SQLITE_OPEN_ flags (for example,
+    ** SQLITE_OPEN_FULLMUTEX or SQLITE_OPEN_SHAREDCACHE) are blocked before
+    ** reaching the VFS. */
+    rc = pVfs->xOpen(pVfs, zPath, pFile, flags & 0x87f7f, pFlagsOut);
+    assert(rc == SQLITE_OK || pFile->pMethods == 0);
+    return rc;
 }
-int sqlite3OsDelete(sqlite3_vfs *pVfs, const char *zPath, int dirSync){
-  DO_OS_MALLOC_TEST(0);
-  assert( dirSync==0 || dirSync==1 );
-  return pVfs->xDelete(pVfs, zPath, dirSync);
+int sqlite3OsDelete(sqlite3_vfs *pVfs, const char *zPath, int dirSync)
+{
+    DO_OS_MALLOC_TEST(0);
+    assert(dirSync == 0 || dirSync == 1);
+    return pVfs->xDelete(pVfs, zPath, dirSync);
 }
 int sqlite3OsAccess(
-  sqlite3_vfs *pVfs, 
-  const char *zPath, 
-  int flags, 
-  int *pResOut
-){
-  DO_OS_MALLOC_TEST(0);
-  return pVfs->xAccess(pVfs, zPath, flags, pResOut);
+    sqlite3_vfs *pVfs,
+    const char *zPath,
+    int flags,
+    int *pResOut
+)
+{
+    DO_OS_MALLOC_TEST(0);
+    return pVfs->xAccess(pVfs, zPath, flags, pResOut);
 }
 int sqlite3OsFullPathname(
-  sqlite3_vfs *pVfs, 
-  const char *zPath, 
-  int nPathOut, 
-  char *zPathOut
-){
-  DO_OS_MALLOC_TEST(0);
-  zPathOut[0] = 0;
-  return pVfs->xFullPathname(pVfs, zPath, nPathOut, zPathOut);
+    sqlite3_vfs *pVfs,
+    const char *zPath,
+    int nPathOut,
+    char *zPathOut
+)
+{
+    DO_OS_MALLOC_TEST(0);
+    zPathOut[0] = 0;
+    return pVfs->xFullPathname(pVfs, zPath, nPathOut, zPathOut);
 }
 #ifndef SQLITE_OMIT_LOAD_EXTENSION
-void *sqlite3OsDlOpen(sqlite3_vfs *pVfs, const char *zPath){
-  return pVfs->xDlOpen(pVfs, zPath);
+void *sqlite3OsDlOpen(sqlite3_vfs *pVfs, const char *zPath)
+{
+    return pVfs->xDlOpen(pVfs, zPath);
 }
-void sqlite3OsDlError(sqlite3_vfs *pVfs, int nByte, char *zBufOut){
-  pVfs->xDlError(pVfs, nByte, zBufOut);
+void sqlite3OsDlError(sqlite3_vfs *pVfs, int nByte, char *zBufOut)
+{
+    pVfs->xDlError(pVfs, nByte, zBufOut);
 }
-void (*sqlite3OsDlSym(sqlite3_vfs *pVfs, void *pHdle, const char *zSym))(void){
-  return pVfs->xDlSym(pVfs, pHdle, zSym);
+void (*sqlite3OsDlSym(sqlite3_vfs *pVfs, void *pHdle, const char *zSym))(void)
+{
+    return pVfs->xDlSym(pVfs, pHdle, zSym);
 }
-void sqlite3OsDlClose(sqlite3_vfs *pVfs, void *pHandle){
-  pVfs->xDlClose(pVfs, pHandle);
+void sqlite3OsDlClose(sqlite3_vfs *pVfs, void *pHandle)
+{
+    pVfs->xDlClose(pVfs, pHandle);
 }
 #endif /* SQLITE_OMIT_LOAD_EXTENSION */
-int sqlite3OsRandomness(sqlite3_vfs *pVfs, int nByte, char *zBufOut){
-  return pVfs->xRandomness(pVfs, nByte, zBufOut);
+int sqlite3OsRandomness(sqlite3_vfs *pVfs, int nByte, char *zBufOut)
+{
+    return pVfs->xRandomness(pVfs, nByte, zBufOut);
 }
-int sqlite3OsSleep(sqlite3_vfs *pVfs, int nMicro){
-  return pVfs->xSleep(pVfs, nMicro);
+int sqlite3OsSleep(sqlite3_vfs *pVfs, int nMicro)
+{
+    return pVfs->xSleep(pVfs, nMicro);
 }
-int sqlite3OsCurrentTimeInt64(sqlite3_vfs *pVfs, sqlite3_int64 *pTimeOut){
-  int rc;
-  /* IMPLEMENTATION-OF: R-49045-42493 SQLite will use the xCurrentTimeInt64()
-  ** method to get the current date and time if that method is available
-  ** (if iVersion is 2 or greater and the function pointer is not NULL) and
-  ** will fall back to xCurrentTime() if xCurrentTimeInt64() is
-  ** unavailable.
-  */
-  if( pVfs->iVersion>=2 && pVfs->xCurrentTimeInt64 ){
-    rc = pVfs->xCurrentTimeInt64(pVfs, pTimeOut);
-  }else{
-    double r;
-    rc = pVfs->xCurrentTime(pVfs, &r);
-    *pTimeOut = (sqlite3_int64)(r*86400000.0);
-  }
-  return rc;
+int sqlite3OsCurrentTimeInt64(sqlite3_vfs *pVfs, sqlite3_int64 *pTimeOut)
+{
+    int rc;
+    /* IMPLEMENTATION-OF: R-49045-42493 SQLite will use the xCurrentTimeInt64()
+    ** method to get the current date and time if that method is available
+    ** (if iVersion is 2 or greater and the function pointer is not NULL) and
+    ** will fall back to xCurrentTime() if xCurrentTimeInt64() is
+    ** unavailable.
+    */
+    if (pVfs->iVersion >= 2 && pVfs->xCurrentTimeInt64)
+    {
+        rc = pVfs->xCurrentTimeInt64(pVfs, pTimeOut);
+    }
+    else
+    {
+        double r;
+        rc = pVfs->xCurrentTime(pVfs, &r);
+        *pTimeOut = (sqlite3_int64)(r * 86400000.0);
+    }
+    return rc;
 }
 
 int sqlite3OsOpenMalloc(
-  sqlite3_vfs *pVfs, 
-  const char *zFile, 
-  sqlite3_file **ppFile, 
-  int flags,
-  int *pOutFlags
-){
-  int rc = SQLITE_NOMEM;
-  sqlite3_file *pFile;
-  pFile = (sqlite3_file *)sqlite3MallocZero(pVfs->szOsFile);
-  if( pFile ){
-    rc = sqlite3OsOpen(pVfs, zFile, pFile, flags, pOutFlags);
-    if( rc!=SQLITE_OK ){
-      sqlite3_free(pFile);
-    }else{
-      *ppFile = pFile;
+    sqlite3_vfs *pVfs,
+    const char *zFile,
+    sqlite3_file **ppFile,
+    int flags,
+    int *pOutFlags
+)
+{
+    int rc = SQLITE_NOMEM;
+    sqlite3_file *pFile;
+    pFile = (sqlite3_file *)sqlite3MallocZero(pVfs->szOsFile);
+    if (pFile)
+    {
+        rc = sqlite3OsOpen(pVfs, zFile, pFile, flags, pOutFlags);
+        if (rc != SQLITE_OK)
+        {
+            sqlite3_free(pFile);
+        }
+        else
+        {
+            *ppFile = pFile;
+        }
     }
-  }
-  return rc;
+    return rc;
 }
-int sqlite3OsCloseFree(sqlite3_file *pFile){
-  int rc = SQLITE_OK;
-  assert( pFile );
-  rc = sqlite3OsClose(pFile);
-  sqlite3_free(pFile);
-  return rc;
+int sqlite3OsCloseFree(sqlite3_file *pFile)
+{
+    int rc = SQLITE_OK;
+    assert(pFile);
+    rc = sqlite3OsClose(pFile);
+    sqlite3_free(pFile);
+    return rc;
 }
 
 /*
@@ -258,11 +297,12 @@ int sqlite3OsCloseFree(sqlite3_file *pFile){
 ** ability to simulate a malloc failure, so that the handling of an
 ** error in sqlite3_os_init() by the upper layers can be tested.
 */
-int sqlite3OsInit(void){
-  void *p = sqlite3_malloc(10);
-  if( p==0 ) return SQLITE_NOMEM;
-  sqlite3_free(p);
-  return sqlite3_os_init();
+int sqlite3OsInit(void)
+{
+    void *p = sqlite3_malloc(10);
+    if (p == 0) return SQLITE_NOMEM;
+    sqlite3_free(p);
+    return sqlite3_os_init();
 }
 
 /*
@@ -275,45 +315,55 @@ static sqlite3_vfs * SQLITE_WSD vfsList = 0;
 ** Locate a VFS by name.  If no name is given, simply return the
 ** first VFS on the list.
 */
-sqlite3_vfs *sqlite3_vfs_find(const char *zVfs){
-  sqlite3_vfs *pVfs = 0;
+sqlite3_vfs *sqlite3_vfs_find(const char *zVfs)
+{
+    sqlite3_vfs *pVfs = 0;
 #if SQLITE_THREADSAFE
-  sqlite3_mutex *mutex;
+    sqlite3_mutex *mutex;
 #endif
 #ifndef SQLITE_OMIT_AUTOINIT
-  int rc = sqlite3_initialize();
-  if( rc ) return 0;
+    int rc = sqlite3_initialize();
+    if (rc) return 0;
 #endif
 #if SQLITE_THREADSAFE
-  mutex = sqlite3MutexAlloc(SQLITE_MUTEX_STATIC_MASTER);
+    mutex = sqlite3MutexAlloc(SQLITE_MUTEX_STATIC_MASTER);
 #endif
-  sqlite3_mutex_enter(mutex);
-  for(pVfs = vfsList; pVfs; pVfs=pVfs->pNext){
-    if( zVfs==0 ) break;
-    if( strcmp(zVfs, pVfs->zName)==0 ) break;
-  }
-  sqlite3_mutex_leave(mutex);
-  return pVfs;
+    sqlite3_mutex_enter(mutex);
+    for (pVfs = vfsList; pVfs; pVfs = pVfs->pNext)
+    {
+        if (zVfs == 0) break;
+        if (strcmp(zVfs, pVfs->zName) == 0) break;
+    }
+    sqlite3_mutex_leave(mutex);
+    return pVfs;
 }
 
 /*
 ** Unlink a VFS from the linked list
 */
-static void vfsUnlink(sqlite3_vfs *pVfs){
-  assert( sqlite3_mutex_held(sqlite3MutexAlloc(SQLITE_MUTEX_STATIC_MASTER)) );
-  if( pVfs==0 ){
-    /* No-op */
-  }else if( vfsList==pVfs ){
-    vfsList = pVfs->pNext;
-  }else if( vfsList ){
-    sqlite3_vfs *p = vfsList;
-    while( p->pNext && p->pNext!=pVfs ){
-      p = p->pNext;
+static void vfsUnlink(sqlite3_vfs *pVfs)
+{
+    assert(sqlite3_mutex_held(sqlite3MutexAlloc(SQLITE_MUTEX_STATIC_MASTER)));
+    if (pVfs == 0)
+    {
+        /* No-op */
     }
-    if( p->pNext==pVfs ){
-      p->pNext = pVfs->pNext;
+    else if (vfsList == pVfs)
+    {
+        vfsList = pVfs->pNext;
     }
-  }
+    else if (vfsList)
+    {
+        sqlite3_vfs *p = vfsList;
+        while (p->pNext && p->pNext != pVfs)
+        {
+            p = p->pNext;
+        }
+        if (p->pNext == pVfs)
+        {
+            p->pNext = pVfs->pNext;
+        }
+    }
 }
 
 /*
@@ -321,36 +371,41 @@ static void vfsUnlink(sqlite3_vfs *pVfs){
 ** VFS multiple times.  The new VFS becomes the default if makeDflt is
 ** true.
 */
-int sqlite3_vfs_register(sqlite3_vfs *pVfs, int makeDflt){
-  MUTEX_LOGIC(sqlite3_mutex *mutex;)
+int sqlite3_vfs_register(sqlite3_vfs *pVfs, int makeDflt)
+{
+    MUTEX_LOGIC(sqlite3_mutex * mutex;)
 #ifndef SQLITE_OMIT_AUTOINIT
-  int rc = sqlite3_initialize();
-  if( rc ) return rc;
+    int rc = sqlite3_initialize();
+    if (rc) return rc;
 #endif
-  MUTEX_LOGIC( mutex = sqlite3MutexAlloc(SQLITE_MUTEX_STATIC_MASTER); )
-  sqlite3_mutex_enter(mutex);
-  vfsUnlink(pVfs);
-  if( makeDflt || vfsList==0 ){
-    pVfs->pNext = vfsList;
-    vfsList = pVfs;
-  }else{
-    pVfs->pNext = vfsList->pNext;
-    vfsList->pNext = pVfs;
-  }
-  assert(vfsList);
-  sqlite3_mutex_leave(mutex);
-  return SQLITE_OK;
+    MUTEX_LOGIC(mutex = sqlite3MutexAlloc(SQLITE_MUTEX_STATIC_MASTER);)
+    sqlite3_mutex_enter(mutex);
+    vfsUnlink(pVfs);
+    if (makeDflt || vfsList == 0)
+    {
+        pVfs->pNext = vfsList;
+        vfsList = pVfs;
+    }
+    else
+    {
+        pVfs->pNext = vfsList->pNext;
+        vfsList->pNext = pVfs;
+    }
+    assert(vfsList);
+    sqlite3_mutex_leave(mutex);
+    return SQLITE_OK;
 }
 
 /*
 ** Unregister a VFS so that it is no longer accessible.
 */
-int sqlite3_vfs_unregister(sqlite3_vfs *pVfs){
+int sqlite3_vfs_unregister(sqlite3_vfs *pVfs)
+{
 #if SQLITE_THREADSAFE
-  sqlite3_mutex *mutex = sqlite3MutexAlloc(SQLITE_MUTEX_STATIC_MASTER);
+    sqlite3_mutex *mutex = sqlite3MutexAlloc(SQLITE_MUTEX_STATIC_MASTER);
 #endif
-  sqlite3_mutex_enter(mutex);
-  vfsUnlink(pVfs);
-  sqlite3_mutex_leave(mutex);
-  return SQLITE_OK;
+    sqlite3_mutex_enter(mutex);
+    vfsUnlink(pVfs);
+    sqlite3_mutex_leave(mutex);
+    return SQLITE_OK;
 }

@@ -29,30 +29,34 @@ typedef struct HashElem HashElem;
 ** accessing this structure are really macros, so we can't really make
 ** this structure opaque.
 */
-struct Hash {
-  char keyClass;          /* HASH_INT, _POINTER, _STRING, _BINARY */
-  char copyKey;           /* True if copy of key made on insert */
-  int count;              /* Number of entries in this table */
-  HashElem *first;        /* The first element of the array */
-  void *(*xMalloc)(int);  /* malloc() function to use */
-  void (*xFree)(void *);  /* free() function to use */
-  int htsize;             /* Number of buckets in the hash table */
-  struct _ht {            /* the hash table */
-    int count;               /* Number of entries with this hash */
-    HashElem *chain;         /* Pointer to first entry with this hash */
-  } *ht;
+struct Hash
+{
+    char keyClass;          /* HASH_INT, _POINTER, _STRING, _BINARY */
+    char copyKey;           /* True if copy of key made on insert */
+    int count;              /* Number of entries in this table */
+    HashElem *first;        /* The first element of the array */
+    void *(*xMalloc)(int);  /* malloc() function to use */
+    void (*xFree)(void *);  /* free() function to use */
+    int htsize;             /* Number of buckets in the hash table */
+    struct _ht              /* the hash table */
+    {
+        int count;               /* Number of entries with this hash */
+        HashElem *chain;         /* Pointer to first entry with this hash */
+    } *ht;
 };
 
-/* Each element in the hash table is an instance of the following 
+/* Each element in the hash table is an instance of the following
 ** structure.  All elements are stored on a single doubly-linked list.
 **
 ** Again, this structure is intended to be opaque, but it can't really
 ** be opaque because it is used by macros.
 */
-struct HashElem {
-  HashElem *next, *prev;   /* Next and previous elements in the table */
-  void *data;              /* Data associated with this element */
-  void *pKey; int nKey;    /* Key associated with this element */
+struct HashElem
+{
+    HashElem *next, *prev;   /* Next and previous elements in the table */
+    void *data;              /* Data associated with this element */
+    void *pKey;
+    int nKey;    /* Key associated with this element */
 };
 
 /*
@@ -66,11 +70,11 @@ struct HashElem {
 **                           (including the null-terminator, if any).  Case
 **                           is respected in comparisons.
 **
-**   HASH_BINARY      pKey points to binary data nKey bytes long. 
+**   HASH_BINARY      pKey points to binary data nKey bytes long.
 **                           memcmp() is used to compare keys.
 **
 ** A copy of the key is made for HASH_STRING and HASH_BINARY
-** if the copyKey parameter to HashInit is 1.  
+** if the copyKey parameter to HashInit is 1.
 */
 /* #define HASH_INT       1 // NOT USED */
 /* #define HASH_POINTER   2 // NOT USED */

@@ -33,7 +33,7 @@
 # ifndef SQLITE_DEBUG_OS_TRACE
 #   define SQLITE_DEBUG_OS_TRACE 0
 # endif
-  int sqlite3OSTrace = SQLITE_DEBUG_OS_TRACE;
+int sqlite3OSTrace = SQLITE_DEBUG_OS_TRACE;
 # define OSTRACE(X)          if( sqlite3OSTrace ) sqlite3DebugPrintf X
 #else
 # define OSTRACE(X)
@@ -45,8 +45,8 @@
 */
 #ifdef SQLITE_PERFORMANCE_TRACE
 
-/* 
-** hwtime.h contains inline assembler code for implementing 
+/*
+** hwtime.h contains inline assembler code for implementing
 ** high-performance timing routines.
 */
 #include "hwtime.h"
@@ -80,10 +80,11 @@ int sqlite3_diskfull = 0;
   if( (sqlite3_io_error_persist && sqlite3_io_error_hit) \
        || sqlite3_io_error_pending-- == 1 )  \
               { local_ioerr(); CODE; }
-static void local_ioerr(){
-  IOTRACE(("IOERR\n"));
-  sqlite3_io_error_hit++;
-  if( !sqlite3_io_error_benign ) sqlite3_io_error_hardhit++;
+static void local_ioerr()
+{
+    IOTRACE(("IOERR\n"));
+    sqlite3_io_error_hit++;
+    if (!sqlite3_io_error_benign) sqlite3_io_error_hardhit++;
 }
 #define SimulateDiskfullError(CODE) \
    if( sqlite3_diskfull_pending ){ \
