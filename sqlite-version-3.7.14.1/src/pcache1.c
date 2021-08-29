@@ -24,6 +24,8 @@ typedef struct PgHdr1 PgHdr1;
 typedef struct PgFreeslot PgFreeslot;
 typedef struct PGroup PGroup;
 
+/* pcache1是pcache的一个实现 */
+
 /* Each page cache (or PCache) belongs to a PGroup.  A PGroup is a set
 ** of one or more PCaches that are able to recycle each others unpinned
 ** pages when they are under memory pressure.  A PGroup is an instance of
@@ -45,6 +47,7 @@ typedef struct PGroup PGroup;
 ** For mode (1), PGroup.mutex is NULL.  For mode (2) there is only a single
 ** PGroup which is the pcache1.grp global variable and its mutex is
 ** SQLITE_MUTEX_STATIC_LRU.
+** 每一个page cache属于一个PGroup
 */
 struct PGroup
 {
@@ -52,7 +55,9 @@ struct PGroup
     unsigned int nMaxPage;         /* Sum of nMax for purgeable caches */
     unsigned int nMinPage;         /* Sum of nMin for purgeable caches */
     unsigned int mxPinned;         /* nMaxpage + 10 - nMinPage */
+    /* 可回收的页的个数 */
     unsigned int nCurrentPage;     /* Number of purgeable pages allocated */
+    /* 指向链表 */
     PgHdr1 *pLruHead, *pLruTail;   /* LRU list of unpinned pages */
 };
 
@@ -63,6 +68,7 @@ struct PGroup
 **
 ** Pointers to structures of this type are cast and returned as
 ** opaque sqlite3_pcache* handles.
+** 每一个page cache实际是struct PCache1的一个实例
 */
 struct PCache1
 {
@@ -72,8 +78,10 @@ struct PCache1
     ** The PGroup mutex must be held when accessing nMax.
     */
     PGroup *pGroup;                     /* PGroup this cache belongs to */
+    /* page的大小 */
     int szPage;                         /* Size of allocated pages in bytes */
     int szExtra;                        /* Size of extra space in bytes */
+    /* 如果cache是可回收的,设置为true */
     int bPurgeable;                     /* True if cache is purgeable */
     unsigned int nMin;                  /* Minimum number of pages reserved */
     unsigned int nMax;                  /* Configured "cache_size" value */
@@ -116,6 +124,7 @@ struct PgFreeslot
 
 /*
 ** Global data used by this cache.
+** 全局数据
 */
 static SQLITE_WSD struct PCacheGlobal
 {
@@ -140,7 +149,7 @@ static SQLITE_WSD struct PCacheGlobal
     ** (2) even if an incorrect value is read, no great harm is done since this
     ** is really just an optimization. */
     int bUnderPressure;            /* True if low on PAGECACHE memory */
-} pcache1_g;
+} pcache1_g; /* 全局仅仅只有一个实例 */
 
 /*
 ** All code in this file should access the global structure above via the
@@ -240,6 +249,7 @@ static void *pcache1Alloc(int nByte)
 
 /*
 ** Free an allocated buffer obtained from pcache1Alloc().
+** 内存释放
 */
 static int pcache1Free(void *p)
 {
@@ -251,7 +261,7 @@ static int pcache1Free(void *p)
         sqlite3_mutex_enter(pcache1.mutex);
         sqlite3StatusAdd(SQLITE_STATUS_PAGECACHE_USED, -1);
         pSlot = (PgFreeslot*)p;
-        pSlot->pNext = pcache1.pFree;
+        pSlot->pNext = pcache1.pFree; /* 放入空闲链表 */
         pcache1.pFree = pSlot;
         pcache1.nFreeSlot++;
         pcache1.bUnderPressure = pcache1.nFreeSlot < pcache1.nReserve;
@@ -297,6 +307,7 @@ static int pcache1MemSize(void *p)
 
 /*
 ** Allocate a new page object initially associated with cache pCache.
+** 分配一个page
 */
 static PgHdr1 *pcache1AllocPage(PCache1 *pCache)
 {
@@ -325,8 +336,8 @@ static PgHdr1 *pcache1AllocPage(PCache1 *pCache)
 
     if (pPg)
     {
-        p->page.pBuf = pPg;
-        p->page.pExtra = &p[1];
+        p->page.pBuf = pPg; /* 记录下buffer */
+        p->page.pExtra = &p[1]; /* 额外数据 */
         if (pCache->bPurgeable)
         {
             pCache->pGroup->nCurrentPage++;
@@ -342,6 +353,7 @@ static PgHdr1 *pcache1AllocPage(PCache1 *pCache)
 ** The pointer is allowed to be NULL, which is prudent.  But it turns out
 ** that the current implementation happens to never call this routine
 ** with a NULL pointer, so we mark the NULL test with ALWAYS().
+** 释放掉一个page
 */
 static void pcache1FreePage(PgHdr1 *p)
 {
@@ -471,6 +483,8 @@ static int pcache1ResizeHash(PCache1 *p)
 ** The PGroup mutex must be held when this function is called.
 **
 ** If pPage is NULL then this routine is a no-op.
+** 将page从PGroup LRU链表中移除
+**
 */
 static void pcache1PinPage(PgHdr1 *pPage)
 {
@@ -479,7 +493,7 @@ static void pcache1PinPage(PgHdr1 *pPage)
 
     if (pPage == 0) return;
     pCache = pPage->pCache;
-    pGroup = pCache->pGroup;
+    pGroup = pCache->pGroup; /* 得到group */
     assert(sqlite3_mutex_held(pGroup->mutex));
     if (pPage->pLruNext || pPage == pGroup->pLruTail)
     {
@@ -511,6 +525,7 @@ static void pcache1PinPage(PgHdr1 *pPage)
 ** (PCache1.apHash structure) that it is currently stored in.
 **
 ** The PGroup mutex must be held when this function is called.
+** 将page从hash表中移除
 */
 static void pcache1RemoveFromHash(PgHdr1 *pPage)
 {
@@ -519,7 +534,7 @@ static void pcache1RemoveFromHash(PgHdr1 *pPage)
     PgHdr1 **pp;
 
     assert(sqlite3_mutex_held(pCache->pGroup->mutex));
-    h = pPage->iKey % pCache->nHash;
+    h = pPage->iKey % pCache->nHash; /* 计算得到slot */
     for (pp = &pCache->apHash[h]; (*pp) != pPage; pp = &(*pp)->pNext);
     *pp = (*pp)->pNext;
 
@@ -529,6 +544,7 @@ static void pcache1RemoveFromHash(PgHdr1 *pPage)
 /*
 ** If there are currently more than nMaxPage pages allocated, try
 ** to recycle pages to reduce the number allocated to nMaxPage.
+** 尝试回收page
 */
 static void pcache1EnforceMaxPage(PGroup *pGroup)
 {
@@ -618,6 +634,7 @@ static void pcache1Shutdown(void *NotUsed)
 ** Implementation of the sqlite3_pcache.xCreate method.
 **
 ** Allocate a new cache.
+** 创建一个新的page cache
 */
 static sqlite3_pcache *pcache1Create(int szPage, int szExtra, int bPurgeable)
 {
@@ -645,7 +662,7 @@ static sqlite3_pcache *pcache1Create(int szPage, int szExtra, int bPurgeable)
 
     assert((szPage & (szPage - 1)) == 0 && szPage >= 512 && szPage <= 65536);
     assert(szExtra < 300);
-
+    /* 可以学一下这里的技巧,整体分配,减小内存碎片 */
     sz = sizeof(PCache1) + sizeof(PGroup) * separateCache;
     pCache = (PCache1 *)sqlite3MallocZero(sz);
     if (pCache)
@@ -660,7 +677,7 @@ static sqlite3_pcache *pcache1Create(int szPage, int szExtra, int bPurgeable)
             pGroup = &pcache1.grp;
         }
         pCache->pGroup = pGroup;
-        pCache->szPage = szPage;
+        pCache->szPage = szPage; /* page大小 */
         pCache->szExtra = szExtra;
         pCache->bPurgeable = (bPurgeable ? 1 : 0);
         if (bPurgeable)
@@ -700,6 +717,7 @@ static void pcache1Cachesize(sqlite3_pcache *p, int nMax)
 ** Implementation of the sqlite3_pcache.xShrink method.
 **
 ** Free up as much memory as possible.
+** 内存压缩,尽可能多的释放内存
 */
 static void pcache1Shrink(sqlite3_pcache *p)
 {

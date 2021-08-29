@@ -22,6 +22,7 @@
 #include "sqliteInt.h"
 #include "wal.h"
 
+/* 本文件主要实现内存缓存 */
 
 /******************* NOTES ON THE DESIGN OF THE PAGER ************************
 **
@@ -442,7 +443,7 @@ int sqlite3PagerTrace = 1; /* True to enable tracing */
 ** rollback (see pagerPlaybackSavepoint()).
 */
 typedef struct PagerSavepoint PagerSavepoint;
-struct PagerSavepoint
+struct PagerSavepoint /* 保存点 */
 {
     i64 iOffset;                 /* Starting offset in main journal */
     i64 iHdrOffset;              /* See above */
@@ -610,10 +611,13 @@ struct PagerSavepoint
 */
 struct Pager
 {
+    /* io函数 */
     sqlite3_vfs *pVfs;          /* OS functions to use for IO */
+    /* 是否处于排他模式 */
     u8 exclusiveMode;           /* Boolean. True if locking_mode==EXCLUSIVE */
     u8 journalMode;             /* One of the PAGER_JOURNALMODE_* values */
     u8 useJournal;              /* Use a rollback journal on this file */
+    /* 无需同步日志,如果为true */
     u8 noSync;                  /* Do not sync the journal if true */
     u8 fullSync;                /* Do extra syncs of the journal for robustness */
     u8 ckptSyncFlags;           /* SYNC_NORMAL or SYNC_FULL for checkpoint */
@@ -633,28 +637,40 @@ struct Pager
     ** "configuration" of the pager.
     */
     u8 eState;                  /* Pager state (OPEN, READER, WRITER_LOCKED..) */
+    /* 数据库文件当前持有的锁 */
     u8 eLock;                   /* Current lock held on database file */
     u8 changeCountDone;         /* Set after incrementing the change-counter */
     u8 setMaster;               /* True if a m-j name has been written to jrnl */
     u8 doNotSpill;              /* Do not spill the cache when non-zero */
     u8 doNotSyncSpill;          /* Do not do a spill that requires jrnl sync */
+    /* 是否使用内存sub-journals */
     u8 subjInMemory;            /* True to use in-memory sub-journals */
+    /* 数据库大小(用page计算) */
     Pgno dbSize;                /* Number of pages in the database */
+    /* 数据库原本大小(page计算) */
     Pgno dbOrigSize;            /* dbSize before the current transaction */
+    /* 数据库文件大小(page计算) */
     Pgno dbFileSize;            /* Number of pages in the database file */
     Pgno dbHintSize;            /* Value passed to FCNTL_SIZE_HINT call */
     int errCode;                /* One of several kinds of errors */
+    /* 写入的记录个数 */
     int nRec;                   /* Pages journalled since last j-header written */
     u32 cksumInit;              /* Quasi-random value added to every checksum */
     u32 nSubRec;                /* Number of records written to sub-journal */
     Bitvec *pInJournal;         /* One bit for each page in the database file */
+    /* 数据库文件 */
     sqlite3_file *fd;           /* File descriptor for database */
+    /* 主日志 */
     sqlite3_file *jfd;          /* File descriptor for main journal */
+    /* sub-journal */
     sqlite3_file *sjfd;         /* File descriptor for sub-journal */
+    /* 当前日志文件的写偏移 */
     i64 journalOff;             /* Current write offset in the journal file */
+    /* 记录日志文件头部偏移 */
     i64 journalHdr;             /* Byte offset to previous journal header */
     sqlite3_backup *pBackup;    /* Pointer to list of ongoing backup processes */
     PagerSavepoint *aSavepoint; /* Array of active savepoints */
+    /* savepoint的个数 */
     int nSavepoint;             /* Number of elements in aSavepoint[] */
     char dbFileVers[16];        /* Changes whenever database file changes */
     /*
@@ -664,12 +680,19 @@ struct Pager
     u16 nExtra;                 /* Add this many bytes to each in-memory page */
     i16 nReserve;               /* Number of unused bytes at end of each page */
     u32 vfsFlags;               /* Flags for sqlite3_vfs.xOpen() */
+    /* 扇区大小 */
     u32 sectorSize;             /* Assumed sector size during rollback */
+    /* 页大小 */
     int pageSize;               /* Number of bytes in a page */
+
     Pgno mxPgno;                /* Maximum allowed size of the database */
+    /* 日志文件大小限制 */
     i64 journalSizeLimit;       /* Size limit for persistent journal files */
+    /* 数据库文件名称 */
     char *zFilename;            /* Name of the database file */
+    /* 日志文件名称 */
     char *zJournal;             /* Name of the journal file */
+    /* 当不能持有锁的时候,执行的函数 */
     int (*xBusyHandler)(void*); /* Function to call when busy */
     void *pBusyHandlerArg;      /* Context argument for xBusyHandler */
     int aStat[3];               /* Total cache hits, misses and writes */
@@ -812,6 +835,7 @@ static int pagerUseWal(Pager *pPager)
 **
 ** This function runs many asserts to try to find inconsistencies in
 ** the internal state of the Pager object.
+** 调试函数,用于判断Pager状态是否正确
 */
 static int assert_pager_state(Pager *p)
 {
@@ -955,6 +979,7 @@ static int assert_pager_state(Pager *p)
 ** to "print *pPager" in gdb:
 **
 ** (gdb) printf "%s", print_pager_state(pPager)
+** 调试函数,打印Pager信息
 */
 static char *print_pager_state(Pager *p)
 {
@@ -1010,7 +1035,7 @@ static char *print_pager_state(Pager *p)
 */
 static int subjRequiresPage(PgHdr *pPg)
 {
-    Pgno pgno = pPg->pgno;
+    Pgno pgno = pPg->pgno; /* 页号 */
     Pager *pPager = pPg->pPager;
     int i;
     for (i = 0; i < pPager->nSavepoint; i++)
@@ -1026,6 +1051,7 @@ static int subjRequiresPage(PgHdr *pPg)
 
 /*
 ** Return true if the page is already in the journal file.
+** 如果page已经存在于日志(journal)文件中,返回true
 */
 static int pageInJournal(PgHdr *pPg)
 {
@@ -1038,6 +1064,8 @@ static int pageInJournal(PgHdr *pPg)
 ** error code is something goes wrong.
 **
 ** All values are stored on disk as big-endian.
+** 从指定的文件描述符中读取一个32-bit的整数
+** @param offset 偏移
 */
 static int read32bits(sqlite3_file *fd, i64 offset, u32 *pRes)
 {
@@ -1052,6 +1080,7 @@ static int read32bits(sqlite3_file *fd, i64 offset, u32 *pRes)
 
 /*
 ** Write a 32-bit integer into a string buffer in big-endian byte order.
+** 写入一个32-bit的整数到string buffer中去
 */
 #define put32bits(A,B)  sqlite3Put4byte((u8*)A,B)
 
@@ -1075,6 +1104,7 @@ static int write32bits(sqlite3_file *fd, i64 offset, u32 val)
 ** Except, if Pager.eLock is set to UNKNOWN_LOCK when this function is
 ** called, do not modify it. See the comment above the #define of
 ** UNKNOWN_LOCK for an explanation of this.
+** 对数据库文件进行解锁.
 */
 static int pagerUnlockDb(Pager *pPager, int eLock)
 {
@@ -1105,6 +1135,8 @@ static int pagerUnlockDb(Pager *pPager, int eLock)
 ** called, do not modify it unless the new locking state is EXCLUSIVE_LOCK.
 ** See the comment above the #define of UNKNOWN_LOCK for an explanation
 ** of this.
+** 对数据库文件进行加锁操作
+** @parma elock 锁的类型
 */
 static int pagerLockDb(Pager *pPager, int eLock)
 {
@@ -1116,7 +1148,7 @@ static int pagerLockDb(Pager *pPager, int eLock)
         rc = sqlite3OsLock(pPager->fd, eLock);
         if (rc == SQLITE_OK && (pPager->eLock != UNKNOWN_LOCK || eLock == EXCLUSIVE_LOCK))
         {
-            pPager->eLock = (u8)eLock;
+            pPager->eLock = (u8)eLock; /* 记录下锁的类型 */
             IOTRACE(("LOCK %p %d\n", pPager, eLock))
         }
     }
@@ -1152,8 +1184,8 @@ static int jrnlBufferSize(Pager *pPager)
 
         assert(isOpen(pPager->fd));
         dc = sqlite3OsDeviceCharacteristics(pPager->fd);
-        nSector = pPager->sectorSize;
-        szPage = pPager->pageSize;
+        nSector = pPager->sectorSize; /* 扇区大小 */
+        szPage = pPager->pageSize; /* 页大小 */
 
         assert(SQLITE_IOCAP_ATOMIC512 == (512 >> 8));
         assert(SQLITE_IOCAP_ATOMIC64K == (65536 >> 8));
@@ -1175,6 +1207,7 @@ static int jrnlBufferSize(Pager *pPager)
 #ifdef SQLITE_CHECK_PAGES
 /*
 ** Return a 32-bit hash of the page data for pPage.
+** 计算hash值
 */
 static u32 pager_datahash(int nByte, unsigned char *pData)
 {
@@ -1239,6 +1272,8 @@ static void checkPage(PgHdr *pPg)
 **
 ** If an error occurs while reading from the journal file, an SQLite
 ** error code is returned.
+**
+** 从日志文件中读取数据至zMaster
 */
 static int readMasterJournal(sqlite3_file *pJrnl, char *zMaster, u32 nMaster)
 {
@@ -1250,13 +1285,13 @@ static int readMasterJournal(sqlite3_file *pJrnl, char *zMaster, u32 nMaster)
     unsigned char aMagic[8];   /* A buffer to hold the magic header */
     zMaster[0] = '\0';
 
-    if (SQLITE_OK != (rc = sqlite3OsFileSize(pJrnl, &szJ))
+    if (SQLITE_OK != (rc = sqlite3OsFileSize(pJrnl, &szJ)) /* 文件大小 */
         || szJ < 16
-        || SQLITE_OK != (rc = read32bits(pJrnl, szJ - 16, &len))
+        || SQLITE_OK != (rc = read32bits(pJrnl, szJ - 16, &len)) /* 从最后16字节处读取4字节的len */
         || len >= nMaster
-        || SQLITE_OK != (rc = read32bits(pJrnl, szJ - 12, &cksum))
-        || SQLITE_OK != (rc = sqlite3OsRead(pJrnl, aMagic, 8, szJ - 8))
-        || memcmp(aMagic, aJournalMagic, 8)
+        || SQLITE_OK != (rc = read32bits(pJrnl, szJ - 12, &cksum)) /* 从最后12字节处读取4字节的cksum */
+        || SQLITE_OK != (rc = sqlite3OsRead(pJrnl, aMagic, 8, szJ - 8)) /* 读取magic值 */
+        || memcmp(aMagic, aJournalMagic, 8) /* 比对magic值 */
         || SQLITE_OK != (rc = sqlite3OsRead(pJrnl, zMaster, len, szJ - 16 - len))
        )
     {
@@ -1352,6 +1387,7 @@ static int zeroJournalHdr(Pager *pPager, int doTruncate)
         }
         if (rc == SQLITE_OK && !pPager->noSync)
         {
+            /* 同步至磁盘 */
             rc = sqlite3OsSync(pPager->jfd, SQLITE_SYNC_DATAONLY | pPager->syncFlags);
         }
 
@@ -1388,6 +1424,7 @@ static int zeroJournalHdr(Pager *pPager, int doTruncate)
 ** - 4 bytes: Database page size.
 **
 ** Followed by (JOURNAL_HDR_SZ - 28) bytes of unused space.
+** 将日志文件头部写入磁盘
 */
 static int writeJournalHdr(Pager *pPager)
 {
@@ -1408,7 +1445,7 @@ static int writeJournalHdr(Pager *pPager)
     ** since the most recent journal header was written, update the
     ** PagerSavepoint.iHdrOffset fields now.
     */
-    for (ii = 0; ii < pPager->nSavepoint; ii++)
+    for (ii = 0; ii < pPager->nSavepoint; ii++) /* 遍历保存点 */
     {
         if (pPager->aSavepoint[ii].iHdrOffset == 0)
         {
@@ -1444,7 +1481,7 @@ static int writeJournalHdr(Pager *pPager)
        )
     {
         memcpy(zHeader, aJournalMagic, sizeof(aJournalMagic));
-        put32bits(&zHeader[sizeof(aJournalMagic)], 0xffffffff);
+        put32bits(&zHeader[sizeof(aJournalMagic)], 0xffffffff); /* 4字节魔术值 */
     }
     else
     {
@@ -1453,14 +1490,14 @@ static int writeJournalHdr(Pager *pPager)
 
     /* The random check-hash initialiser */
     sqlite3_randomness(sizeof(pPager->cksumInit), &pPager->cksumInit);
-    put32bits(&zHeader[sizeof(aJournalMagic) + 4], pPager->cksumInit);
+    put32bits(&zHeader[sizeof(aJournalMagic) + 4], pPager->cksumInit); /* 4字节随机比特 */
     /* The initial database size */
-    put32bits(&zHeader[sizeof(aJournalMagic) + 8], pPager->dbOrigSize);
+    put32bits(&zHeader[sizeof(aJournalMagic) + 8], pPager->dbOrigSize); /* 4字节记录页数目 */
     /* The assumed sector size for this process */
-    put32bits(&zHeader[sizeof(aJournalMagic) + 12], pPager->sectorSize);
+    put32bits(&zHeader[sizeof(aJournalMagic) + 12], pPager->sectorSize); /* 4字节记录扇区大小 */
 
     /* The page size */
-    put32bits(&zHeader[sizeof(aJournalMagic) + 16], pPager->pageSize);
+    put32bits(&zHeader[sizeof(aJournalMagic) + 16], pPager->pageSize); /* 4字节记录页大小 */
 
     /* Initializing the tail of the buffer is not necessary.  Everything
     ** works find if the following memset() is omitted.  But initializing
@@ -1490,6 +1527,7 @@ static int writeJournalHdr(Pager *pPager)
     for (nWrite = 0; rc == SQLITE_OK && nWrite < JOURNAL_HDR_SZ(pPager); nWrite += nHeader)
     {
         IOTRACE(("JHDR %p %lld %d\n", pPager, pPager->journalHdr, nHeader))
+        /* 写入至日志文件中 */
         rc = sqlite3OsWrite(pPager->jfd, zHeader, nHeader, pPager->journalOff);
         assert(pPager->journalHdr <= pPager->journalOff);
         pPager->journalOff += nHeader;
@@ -1514,6 +1552,7 @@ static int writeJournalHdr(Pager *pPager)
 ** If the journal header file appears to be corrupted, SQLITE_DONE is
 ** returned and *pNRec and *PDbSize are undefined.  If JOURNAL_HDR_SZ bytes
 ** cannot be read from the journal file an error code is returned.
+** 读取日志文件
 */
 static int readJournalHdr(
     Pager *pPager,               /* Pager object */
@@ -1552,7 +1591,7 @@ static int readJournalHdr(
         {
             return rc;
         }
-        if (memcmp(aMagic, aJournalMagic, sizeof(aMagic)) != 0)
+        if (memcmp(aMagic, aJournalMagic, sizeof(aMagic)) != 0) /* 比对魔术值 */
         {
             return SQLITE_DONE;
         }
@@ -1562,7 +1601,7 @@ static int readJournalHdr(
     ** field, the checksum-initializer and the database size at the start
     ** of the transaction. Return an error code if anything goes wrong.
     */
-    if (SQLITE_OK != (rc = read32bits(pPager->jfd, iHdrOff + 8, pNRec))
+    if (SQLITE_OK != (rc = read32bits(pPager->jfd, iHdrOff + 8, pNRec)) /* 记录个数 */
         || SQLITE_OK != (rc = read32bits(pPager->jfd, iHdrOff + 12, &pPager->cksumInit))
         || SQLITE_OK != (rc = read32bits(pPager->jfd, iHdrOff + 16, pDbSize))
        )
@@ -1576,8 +1615,8 @@ static int readJournalHdr(
         u32 iSectorSize;             /* Sector-size field of journal header */
 
         /* Read the page-size and sector-size journal header fields. */
-        if (SQLITE_OK != (rc = read32bits(pPager->jfd, iHdrOff + 20, &iSectorSize))
-            || SQLITE_OK != (rc = read32bits(pPager->jfd, iHdrOff + 24, &iPageSize))
+        if (SQLITE_OK != (rc = read32bits(pPager->jfd, iHdrOff + 20, &iSectorSize)) /* 扇区大小 */
+            || SQLITE_OK != (rc = read32bits(pPager->jfd, iHdrOff + 24, &iPageSize)) /* 页大小 */
            )
         {
             return rc;
@@ -1725,6 +1764,7 @@ static int writeMasterJournal(Pager *pPager, const char *zMaster)
 ** Find a page in the hash table given its page number. Return
 ** a pointer to the page or NULL if the requested page is not
 ** already in memory.
+** 指定页号pgno,查找page
 */
 static PgHdr *pager_lookup(Pager *pPager, Pgno pgno)
 {
@@ -1783,6 +1823,7 @@ static int addToSavepointBitvecs(Pager *pPager, Pgno pgno)
         PagerSavepoint *p = &pPager->aSavepoint[ii];
         if (pgno <= p->nOrig)
         {
+            /* 设置对应的bit位 */
             rc |= sqlite3BitvecSet(p->pInSavepoint, pgno);
             testcase(rc == SQLITE_NOMEM);
             assert(rc == SQLITE_OK || rc == SQLITE_NOMEM);
@@ -2214,10 +2255,12 @@ static void pagerReportSize(Pager *pPager)
 ** If this is a savepoint rollback, then memory may have to be dynamically
 ** allocated by this function. If this is the case and an allocation fails,
 ** SQLITE_NOMEM is returned.
+** 从日志文件中读取一页
 */
 static int pager_playback_one_page(
     Pager *pPager,                /* The pager being played back */
     i64 *pOffset,                 /* Offset of record to playback */
+    /* 已经回滚完成的page构成的Bitvec */
     Bitvec *pDone,                /* Bitvec of pages already played back */
     int isMainJrnl,               /* 1 -> main journal. 0 -> sub-journal. */
     int isSavepnt                 /* True for a savepoint rollback */
@@ -2255,8 +2298,14 @@ static int pager_playback_one_page(
     ** file. Return an error code to the caller if an IO error occurs.
     */
     jfd = isMainJrnl ? pPager->jfd : pPager->sjfd;
-    rc = read32bits(jfd, *pOffset, &pgno);
+    /* Rollback Journal Page Record Format
+    ** 4字节 页号
+    ** N字节 数据 (N为page大小)
+    ** 4字节 checksum
+    */
+    rc = read32bits(jfd, *pOffset, &pgno); /* 读取页号 */
     if (rc != SQLITE_OK) return rc;
+    /* 读取对应的数据至aData中 */
     rc = sqlite3OsRead(jfd, (u8*)aData, pPager->pageSize, (*pOffset) + 4);
     if (rc != SQLITE_OK) return rc;
     *pOffset += pPager->pageSize + 4 + isMainJrnl * 4;
@@ -2277,16 +2326,18 @@ static int pager_playback_one_page(
     }
     if (isMainJrnl)
     {
-        rc = read32bits(jfd, (*pOffset) - 4, &cksum);
+        rc = read32bits(jfd, (*pOffset) - 4, &cksum); /* 读取最后4字节的checksum */
         if (rc) return rc;
         if (!isSavepnt && pager_cksum(pPager, (u8*)aData) != cksum)
         {
+            /* 如果checksum对不上,就不能还原 */
             return SQLITE_DONE;
         }
     }
 
     /* If this page has already been played by before during the current
     ** rollback, then don't bother to play it back again.
+    ** 如果此条记录已经被还原了,无需继续往下走.
     */
     if (pDone && (rc = sqlite3BitvecSet(pDone, pgno)) != SQLITE_OK)
     {
@@ -2342,7 +2393,7 @@ static int pager_playback_one_page(
     }
     else
     {
-        pPg = pager_lookup(pPager, pgno);
+        pPg = pager_lookup(pPager, pgno); /* 在缓存中查找对应的页 */
     }
     assert(pPg || !MEMDB);
     assert(pPager->eState != PAGER_OPEN || pPg == 0);
@@ -2363,9 +2414,10 @@ static int pager_playback_one_page(
         && isSynced
        )
     {
-        i64 ofst = (pgno - 1) * (i64)pPager->pageSize;
+        i64 ofst = (pgno - 1) * (i64)pPager->pageSize; /* 计算偏移量 */
         testcase(!isSavepnt && pPg != 0 && (pPg->flags & PGHDR_NEED_SYNC) != 0);
         assert(!pagerUseWal(pPager));
+        /* 尝试将数据写入到数据库文件中去 */
         rc = sqlite3OsWrite(pPager->fd, (u8*)aData, pPager->pageSize, ofst);
         if (pgno > pPager->dbFileSize)
         {
@@ -2622,6 +2674,7 @@ delmaster_out:
 **
 ** If successful, return SQLITE_OK. If an IO error occurs while modifying
 ** the database file, return the error code to the caller.
+** 调整数据库的实际大小(扩大或者缩小)
 */
 static int pager_truncate(Pager *pPager, Pgno nPage)
 {
@@ -2634,23 +2687,24 @@ static int pager_truncate(Pager *pPager, Pgno nPage)
        )
     {
         i64 currentSize, newSize;
-        int szPage = pPager->pageSize;
+        int szPage = pPager->pageSize; /* 页大小 */
         assert(pPager->eLock == EXCLUSIVE_LOCK);
         /* TODO: Is it safe to use Pager.dbFileSize here? */
         rc = sqlite3OsFileSize(pPager->fd, &currentSize);
-        newSize = szPage * (i64)nPage;
+        newSize = szPage * (i64)nPage; /* 新的数据库大小 */
         if (rc == SQLITE_OK && currentSize != newSize)
         {
-            if (currentSize > newSize)
+            if (currentSize > newSize) /* 需要缩减 */
             {
                 rc = sqlite3OsTruncate(pPager->fd, newSize);
             }
-            else if ((currentSize + szPage) <= newSize)
+            else if ((currentSize + szPage) <= newSize) /* 需要扩大 */
             {
                 char *pTmp = pPager->pTmpSpace;
                 memset(pTmp, 0, szPage);
                 testcase((newSize - szPage) == currentSize);
                 testcase((newSize - szPage) >  currentSize);
+
                 rc = sqlite3OsWrite(pPager->fd, pTmp, szPage, newSize - szPage);
             }
             if (rc == SQLITE_OK)
@@ -2697,7 +2751,7 @@ static void setSectorSize(Pager *pPager)
         /* Sector size doesn't matter for temporary files. Also, the file
         ** may not have been opened yet, in which case the OsSectorSize()
         ** call will segfault. */
-        pPager->sectorSize = 512;
+        pPager->sectorSize = 512; /* 扇区一般是512字节 */
     }
     else
     {
@@ -2787,7 +2841,7 @@ static int pager_playback(Pager *pPager, int isHot)
     ** the journal is empty.
     */
     assert(isOpen(pPager->jfd));
-    rc = sqlite3OsFileSize(pPager->jfd, &szJ);
+    rc = sqlite3OsFileSize(pPager->jfd, &szJ); /* 日志文件大小 */
     if (rc != SQLITE_OK)
     {
         goto end_playback;
@@ -2896,7 +2950,7 @@ static int pager_playback(Pager *pPager, int isHot)
             rc = pager_playback_one_page(pPager, &pPager->journalOff, 0, 1, 0);
             if (rc != SQLITE_OK)
             {
-                if (rc == SQLITE_DONE)
+                if (rc == SQLITE_DONE) /* 已经还原完成 */
                 {
                     pPager->journalOff = szJ;
                     break;
@@ -2972,6 +3026,7 @@ end_playback:
         /* If there was a master journal and this routine will return success,
         ** see if it is possible to delete the master journal.
         */
+        /* 最终尝试删除日志文件 */
         rc = pager_delmaster(pPager, zMaster);
         testcase(rc != SQLITE_OK);
     }
@@ -2995,6 +3050,7 @@ end_playback:
 **
 ** If an IO error occurs, then the IO error is returned to the caller.
 ** Otherwise, SQLITE_OK is returned.
+** 读取数据库文件到pPg中
 */
 static int readDbPage(PgHdr *pPg)
 {
@@ -3021,7 +3077,7 @@ static int readDbPage(PgHdr *pPg)
     }
     if (rc == SQLITE_OK && !isInWal)
     {
-        i64 iOffset = (pgno - 1) * (i64)pPager->pageSize;
+        i64 iOffset = (pgno - 1) * (i64)pPager->pageSize; /* 计算偏移 */
         rc = sqlite3OsRead(pPager->fd, pPg->pData, pgsz, iOffset);
         if (rc == SQLITE_IOERR_SHORT_READ)
         {
@@ -3071,6 +3127,7 @@ static int readDbPage(PgHdr *pPg)
 ** This is an unconditional update.  See also the pager_incr_changecounter()
 ** routine which only updates the change-counter if the update is actually
 ** needed, as determined by the pPager->changeCountDone state variable.
+** 更新change-counter的值
 */
 static void pager_write_changecounter(PgHdr *pPg)
 {
@@ -3288,6 +3345,7 @@ static int pagerBeginReadTransaction(Pager *pPager)
 ** If no error occurs, SQLITE_OK is returned and the size of the database
 ** in pages is stored in *pnPage. Otherwise, an error code (perhaps
 ** SQLITE_IOERR_FSTAT) is returned and *pnPage is left unmodified.
+** 数据库文件大小(用页来统计)
 */
 static int pagerPagecount(Pager *pPager, Pgno *pnPage)
 {
@@ -3321,7 +3379,7 @@ static int pagerPagecount(Pager *pPager, Pgno *pnPage)
                 return rc;
             }
         }
-        nPage = (Pgno)((n + pPager->pageSize - 1) / pPager->pageSize);
+        nPage = (Pgno)((n + pPager->pageSize - 1) / pPager->pageSize); /* 计算所占的页数 */
     }
 
     /* If the current number of pages in the file is greater than the
@@ -3677,6 +3735,7 @@ int sqlite3_opentemp_count = 0;
 **     SQLITE_OPEN_CREATE
 **     SQLITE_OPEN_EXCLUSIVE
 **     SQLITE_OPEN_DELETEONCLOSE
+** 打开一个临时文件
 */
 static int pagerOpentemp(
     Pager *pPager,        /* The pager object */
@@ -3757,6 +3816,7 @@ void sqlite3PagerSetBusyhandler(
 ** conditions above is not true, the pager was in error state when this
 ** function was called, or because the memory allocation attempt failed,
 ** then *pPageSize is set to the old, retained page size before returning.
+** 更改页大小
 */
 int sqlite3PagerSetPagesize(Pager *pPager, u32 *pPageSize, int nReserve)
 {
@@ -3784,7 +3844,7 @@ int sqlite3PagerSetPagesize(Pager *pPager, u32 *pPageSize, int nReserve)
 
         if (pPager->eState > PAGER_OPEN && isOpen(pPager->fd))
         {
-            rc = sqlite3OsFileSize(pPager->fd, &nByte);
+            rc = sqlite3OsFileSize(pPager->fd, &nByte); /* 获取文件大小 */
         }
         if (rc == SQLITE_OK)
         {
@@ -3884,6 +3944,7 @@ void enable_simulated_io_errors(void)
 ** If any IO error apart from SQLITE_IOERR_SHORT_READ is encountered,
 ** the error code is returned to the caller and the contents of the
 ** output buffer undefined.
+** 读取N个字节的数据到pDest指向的内存
 */
 int sqlite3PagerReadFileheader(Pager *pPager, int N, unsigned char *pDest)
 {
@@ -3937,6 +3998,7 @@ void sqlite3PagerPagecount(Pager *pPager, int *pnPage)
 ** Return SQLITE_OK on success and an error code if we cannot obtain
 ** the lock. If the lock is obtained successfully, set the Pager.state
 ** variable to locktype before returning.
+** 在锁上等待,直到成功,或者失败
 */
 static int pager_wait_on_lock(Pager *pPager, int locktype)
 {
@@ -4024,12 +4086,16 @@ void sqlite3PagerTruncateImage(Pager *pPager, Pgno nPage)
 **
 ** If everything goes as planned, SQLITE_OK is returned. Otherwise,
 ** an SQLite error code.
+** 要进行日志回滚之前,需要先调用这个函数,本函数将日志文件同步至磁盘,然后获取日志文件的大小
+** 至pPager->journalHdr,pager_playback函数执行的时候,就能知道,整个日志文件已经被同步
+** 过了.
 */
 static int pagerSyncHotJournal(Pager *pPager)
 {
     int rc = SQLITE_OK;
     if (!pPager->noSync)
     {
+        /* 首先将可能存在的更新同步至磁盘 */
         rc = sqlite3OsSync(pPager->jfd, SQLITE_SYNC_NORMAL);
     }
     if (rc == SQLITE_OK)
@@ -4052,6 +4118,7 @@ static int pagerSyncHotJournal(Pager *pPager)
 ** is made to roll it back. If an error occurs during the rollback
 ** a hot journal may be left in the filesystem but no error is returned
 ** to the caller.
+** 关闭page cache
 */
 int sqlite3PagerClose(Pager *pPager)
 {
@@ -4122,6 +4189,7 @@ Pgno sqlite3PagerPagenumber(DbPage *pPg)
 
 /*
 ** Increment the reference count for page pPg.
+** 增加对pPg的引用计数
 */
 void sqlite3PagerRef(DbPage *pPg)
 {
@@ -4162,6 +4230,7 @@ void sqlite3PagerRef(DbPage *pPg)
 ** If successful, this routine clears the PGHDR_NEED_SYNC flag of every
 ** page currently held in memory before returning SQLITE_OK. If an IO
 ** error is encountered, then the IO error code is returned to the caller.
+** 日志文件的同步,保证日志写入磁盘
 */
 static int syncJournal(Pager *pPager, int newHdr)
 {
@@ -4316,6 +4385,8 @@ static int syncJournal(Pager *pPager, int newHdr)
 ** If everything is successful, SQLITE_OK is returned. If an IO error
 ** occurs, an IO error code is returned. Or, if the EXCLUSIVE lock cannot
 ** be obtained, SQLITE_BUSY is returned.
+** 将page写入磁盘
+** @param pList 待写入的page
 */
 static int pager_write_pagelist(Pager *pPager, PgHdr *pList)
 {
@@ -4342,6 +4413,7 @@ static int pager_write_pagelist(Pager *pPager, PgHdr *pList)
     assert(rc != SQLITE_OK || isOpen(pPager->fd));
     if (rc == SQLITE_OK && pPager->dbSize > pPager->dbHintSize)
     {
+        /* 数据库大小 */
         sqlite3_int64 szFile = pPager->pageSize * (sqlite3_int64)pPager->dbSize;
         sqlite3OsFileControlHint(pPager->fd, SQLITE_FCNTL_SIZE_HINT, &szFile);
         pPager->dbHintSize = pPager->dbSize;
@@ -4361,6 +4433,7 @@ static int pager_write_pagelist(Pager *pPager, PgHdr *pList)
         */
         if (pgno <= pPager->dbSize && 0 == (pList->flags & PGHDR_DONT_WRITE))
         {
+            /* 计算偏移量 */
             i64 offset = (pgno - 1) * (i64)pPager->pageSize; /* Offset to write */
             char *pData;                                   /* Data to write */
 
@@ -4383,7 +4456,7 @@ static int pager_write_pagelist(Pager *pPager, PgHdr *pList)
             }
             if (pgno > pPager->dbFileSize)
             {
-                pPager->dbFileSize = pgno;
+                pPager->dbFileSize = pgno; /* 更新文件大小 */
             }
             pPager->aStat[PAGER_STAT_WRITE]++;
 
@@ -4400,7 +4473,7 @@ static int pager_write_pagelist(Pager *pPager, PgHdr *pList)
             PAGERTRACE(("NOSTORE %d page %d\n", PAGERID(pPager), pgno));
         }
         pager_set_pagehash(pList);
-        pList = pList->pDirty;
+        pList = pList->pDirty; /* 下一个page */
     }
 
     return rc;
@@ -4443,6 +4516,7 @@ static int openSubJournal(Pager *pPager)
 ** error code if the attempt to write to the sub-journal fails, or
 ** SQLITE_NOMEM if a malloc fails while setting a bit in a savepoint
 ** bitvec.
+** 将当前页追加至sub-journal
 */
 static int subjournalPage(PgHdr *pPg)
 {
@@ -4465,8 +4539,8 @@ static int subjournalPage(PgHdr *pPg)
         ** write the journal record into the file.  */
         if (rc == SQLITE_OK)
         {
-            void *pData = pPg->pData;
-            i64 offset = (i64)pPager->nSubRec * (4 + pPager->pageSize);
+            void *pData = pPg->pData; /* 实际数据 */
+            i64 offset = (i64)pPager->nSubRec * (4 + pPager->pageSize); /* 偏移 */
             char *pData2;
 
             CODEC2(pPager, pData, pPg->pgno, 7, return SQLITE_NOMEM, pData2);
@@ -4664,6 +4738,7 @@ int sqlite3PagerOpen(
     int nPathname = 0;       /* Number of bytes in zPathname */
     int useJournal = (flags & PAGER_OMIT_JOURNAL) == 0; /* False to omit journal */
     int pcacheSize = sqlite3PcacheSize();       /* Bytes to allocate for PCache */
+    /* 默认页大小 */
     u32 szPageDflt = SQLITE_DEFAULT_PAGE_SIZE;  /* Default page size */
     const char *zUri = 0;    /* URI args to copy */
     int nUri = 0;            /* Number of bytes of URI args at *zUri */
@@ -4692,7 +4767,7 @@ int sqlite3PagerOpen(
     if (flags & PAGER_MEMORY)
     {
         memDb = 1;
-        if (zFilename && zFilename[0])
+        if (zFilename && zFilename[0]) /* 数据库文件路径 */
         {
             zPathname = sqlite3DbStrDup(0, zFilename);
             if (zPathname == 0) return SQLITE_NOMEM;
@@ -4765,7 +4840,7 @@ int sqlite3PagerOpen(
 #ifndef SQLITE_OMIT_WAL
                + nPathname + 4 + 2            /* zWal */
 #endif
-           );
+           ); /* 为了避免碎片,将内存分配到一起了 */
     assert(EIGHT_BYTE_ALIGNMENT(SQLITE_INT_TO_PTR(journalFileSize)));
     if (!pPtr)
     {
@@ -4937,7 +5012,7 @@ int sqlite3PagerOpen(
     /* pPager->pFirst = 0; */
     /* pPager->pFirstSynced = 0; */
     /* pPager->pLast = 0; */
-    pPager->nExtra = (u16)nExtra;
+    pPager->nExtra = (u16)nExtra; /* 额外数据大小 */
     pPager->journalSizeLimit = SQLITE_DEFAULT_JOURNAL_SIZE_LIMIT;
     assert(isOpen(pPager->fd) || tempFile);
     setSectorSize(pPager);
@@ -4990,13 +5065,14 @@ int sqlite3PagerOpen(
 ** set to 0 and SQLITE_OK returned. If an IO error occurs while trying
 ** to determine whether or not a hot-journal file exists, the IO error
 ** code is returned and the value of *pExists is undefined.
+** 判断是否存在 hot journal(其实就是日志文件)
 */
 static int hasHotJournal(Pager *pPager, int *pExists)
 {
     sqlite3_vfs * const pVfs = pPager->pVfs;
     int rc = SQLITE_OK;           /* Return code */
     int exists = 1;               /* True if a journal file is present */
-    int jrnlOpen = !!isOpen(pPager->jfd);
+    int jrnlOpen = !!isOpen(pPager->jfd); /* 日志文件是否处于打开状态 */
 
     assert(pPager->useJournal);
     assert(isOpen(pPager->fd));
@@ -5009,6 +5085,7 @@ static int hasHotJournal(Pager *pPager, int *pExists)
     *pExists = 0;
     if (!jrnlOpen)
     {
+        /* 判断文件是否存在 */
         rc = sqlite3OsAccess(pVfs, pPager->zJournal, SQLITE_ACCESS_EXISTS, &exists);
     }
     if (rc == SQLITE_OK && exists)
@@ -5023,6 +5100,7 @@ static int hasHotJournal(Pager *pPager, int *pExists)
         ** in fact there is none.  This results in a false-positive which will
         ** be dealt with by the playback routine.  Ticket #3883.
         */
+        /* 判断是否存在reserved lock */
         rc = sqlite3OsCheckReservedLock(pPager->fd, &locked);
         if (rc == SQLITE_OK && !locked)
         {
@@ -5034,6 +5112,7 @@ static int hasHotJournal(Pager *pPager, int *pExists)
             ** a RESERVED lock to avoid race conditions and to avoid violating
             ** [H33020].
             */
+            /* 如果数据库大小为0,那么要删除journal文件,因为可能是之前遗留下来的 */
             rc = pagerPagecount(pPager, &nPage);
             if (rc == SQLITE_OK)
             {
@@ -5122,6 +5201,7 @@ static int hasHotJournal(Pager *pPager, int *pExists)
 ** If everything is successful, SQLITE_OK is returned. If an IO error
 ** occurs while locking the database, checking for a hot-journal file or
 ** rolling back a journal file, the IO error code is returned.
+** 获取共享锁 open -> reader
 */
 int sqlite3PagerSharedLock(Pager *pPager)
 {
@@ -5164,7 +5244,7 @@ int sqlite3PagerSharedLock(Pager *pPager)
         {
             goto failed;
         }
-        if (bHotJournal)
+        if (bHotJournal) /* 日志文件存在 */
         {
             /* Get an EXCLUSIVE lock on the database file. At this point it is
             ** important that a RESERVED lock is not obtained on the way to the
@@ -5181,7 +5261,8 @@ int sqlite3PagerSharedLock(Pager *pPager)
             ** Unless the pager is in locking_mode=exclusive mode, the lock is
             ** downgraded to SHARED_LOCK before this function returns.
             */
-            rc = pagerLockDb(pPager, EXCLUSIVE_LOCK);
+
+            rc = pagerLockDb(pPager, EXCLUSIVE_LOCK); /* 获取排它锁 */
             if (rc != SQLITE_OK)
             {
                 goto failed;
@@ -5211,6 +5292,7 @@ int sqlite3PagerSharedLock(Pager *pPager)
                     int fout = 0;
                     int f = SQLITE_OPEN_READWRITE | SQLITE_OPEN_MAIN_JOURNAL;
                     assert(!pPager->tempFile);
+                    /* 打开日志文件 */
                     rc = sqlite3OsOpen(pVfs, pPager->zJournal, pPager->jfd, f, &fout);
                     assert(rc != SQLITE_OK || isOpen(pPager->jfd));
                     if (rc == SQLITE_OK && fout & SQLITE_OPEN_READONLY)
@@ -5235,7 +5317,7 @@ int sqlite3PagerSharedLock(Pager *pPager)
                 rc = pagerSyncHotJournal(pPager);
                 if (rc == SQLITE_OK)
                 {
-                    rc = pager_playback(pPager, 1);
+                    rc = pager_playback(pPager, 1);  /* 执行日志回滚操作 */
                     pPager->eState = PAGER_OPEN;
                 }
             }
@@ -5599,6 +5681,7 @@ void sqlite3PagerUnref(DbPage *pPg)
 ** Return SQLITE_OK if everything is successful. Otherwise, return
 ** SQLITE_NOMEM if the attempt to allocate Pager.pInJournal fails, or
 ** an IO error code if opening or writing the journal file fails.
+** 打开日志文件
 */
 static int pager_open_journal(Pager *pPager)
 {
@@ -5693,6 +5776,8 @@ static int pager_open_journal(Pager *pPager)
 ** sub-journal. If the subjInMemory argument is zero, then any required
 ** sub-journal is implemented in-memory if pPager is an in-memory database,
 ** or using a temporary file otherwise.
+** 开启写事务 READER     -> WRITER_LOCKED
+** 其实就是尝试获取RESERVED lock
 */
 int sqlite3PagerBegin(Pager *pPager, int exFlag, int subjInMemory)
 {
@@ -5735,6 +5820,7 @@ int sqlite3PagerBegin(Pager *pPager, int exFlag, int subjInMemory)
             ** busy-handler callback can be used when upgrading to the EXCLUSIVE
             ** lock, but not when obtaining the RESERVED lock.
             */
+            /* 尝试获取RESERVED锁 */
             rc = pagerLockDb(pPager, RESERVED_LOCK);
             if (rc == SQLITE_OK && exFlag)
             {
@@ -5775,6 +5861,7 @@ int sqlite3PagerBegin(Pager *pPager, int exFlag, int subjInMemory)
 ** one of the journals, the corresponding bit is set in the
 ** Pager.pInJournal bitvec and the PagerSavepoint.pInSavepoint bitvecs
 ** of any open savepoints as appropriate.
+** 将一个单独的数据页(page)标记为可写
 */
 static int pager_write(PgHdr *pPg)
 {
@@ -5837,6 +5924,7 @@ static int pager_write(PgHdr *pPg)
         if (!pageInJournal(pPg) && !pagerUseWal(pPager))
         {
             assert(pagerUseWal(pPager) == 0);
+            /* pPg->pgno <= pPager->dbOrigSize表示只是修改 */
             if (pPg->pgno <= pPager->dbOrigSize && isOpen(pPager->jfd))
             {
                 u32 cksum;
@@ -5860,11 +5948,13 @@ static int pager_write(PgHdr *pPg)
                 ** then corruption may follow.
                 */
                 pPg->flags |= PGHDR_NEED_SYNC;
-
+                /* 日志中写入页号 */
                 rc = write32bits(pPager->jfd, iOff, pPg->pgno);
                 if (rc != SQLITE_OK) return rc;
+                /* 写入内容 */
                 rc = sqlite3OsWrite(pPager->jfd, pData2, pPager->pageSize, iOff + 4);
                 if (rc != SQLITE_OK) return rc;
+                /* 写入checksum */
                 rc = write32bits(pPager->jfd, iOff + pPager->pageSize + 4, cksum);
                 if (rc != SQLITE_OK) return rc;
 
@@ -5874,10 +5964,12 @@ static int pager_write(PgHdr *pPg)
                 PAGERTRACE(("JOURNAL %d page %d needSync=%d hash(%08x)\n",
                             PAGERID(pPager), pPg->pgno,
                             ((pPg->flags & PGHDR_NEED_SYNC) ? 1 : 0), pager_pagehash(pPg)));
-
+                /* 记录偏移 */
                 pPager->journalOff += 8 + pPager->pageSize;
+                /* 记录数目+1 */
                 pPager->nRec++;
                 assert(pPager->pInJournal != 0);
+                /* 标记bitmap,表示页已经存在于日志中 */
                 rc = sqlite3BitvecSet(pPager->pInJournal, pPg->pgno);
                 testcase(rc == SQLITE_NOMEM);
                 assert(rc == SQLITE_OK || rc == SQLITE_NOMEM);
@@ -5913,6 +6005,7 @@ static int pager_write(PgHdr *pPg)
 
     /* Update the database size and return.
     */
+    /* 更新数据库的大小,这一点很重要 */
     if (pPager->dbSize < pPg->pgno)
     {
         pPager->dbSize = pPg->pgno;
@@ -5933,6 +6026,7 @@ static int pager_write(PgHdr *pPg)
 **
 ** If an error occurs, SQLITE_NOMEM or an IO error code is returned
 ** as appropriate. Otherwise, SQLITE_OK.
+** 将数据库的页标记为可写
 */
 int sqlite3PagerWrite(DbPage *pDbPage)
 {
@@ -5940,16 +6034,20 @@ int sqlite3PagerWrite(DbPage *pDbPage)
 
     PgHdr *pPg = pDbPage;
     Pager *pPager = pPg->pPager;
+    /* 计算每一个扇区可以包含多少page */
     Pgno nPagePerSector = (pPager->sectorSize / pPager->pageSize);
 
     assert(pPager->eState >= PAGER_WRITER_LOCKED);
     assert(pPager->eState != PAGER_ERROR);
     assert(assert_pager_state(pPager));
 
-    if (nPagePerSector > 1)
+    if (nPagePerSector > 1) /* 1个扇区可以包含多个page,写入日志文件都是以扇区为单位,所以这里要写入多个page */
     {
+        /* 数据库文件总页数 */
         Pgno nPageCount;          /* Total number of pages in database file */
+        /* pPg所在扇区的第一个page的页号 */
         Pgno pg1;                 /* First page of the sector pPg is located on. */
+        /* 要写入的page的个数 */
         int nPage = 0;            /* Number of pages starting at pg1 to journal */
         int ii;                   /* Loop counter */
         int needSync = 0;         /* True if any page has PGHDR_NEED_SYNC */
@@ -5965,21 +6063,24 @@ int sqlite3PagerWrite(DbPage *pDbPage)
         /* This trick assumes that both the page-size and sector-size are
         ** an integer power of 2. It sets variable pg1 to the identifier
         ** of the first page of the sector pPg is located on.
+        ** 我们假定page大小和sector大小都是2的幂次,
+        ** pg1设置为pPg所在扇区的第一个page的页号
         */
         pg1 = ((pPg->pgno - 1) & ~(nPagePerSector - 1)) + 1;
 
         nPageCount = pPager->dbSize;
-        if (pPg->pgno > nPageCount)
+        if (pPg->pgno > nPageCount) /* 新页 */
         {
-            nPage = (pPg->pgno - pg1) + 1;
+            nPage = (pPg->pgno - pg1) + 1; /* 从pg1写到pPg->pgno即可 */
         }
-        else if ((pg1 + nPagePerSector - 1) > nPageCount)
+        else if ((pg1 + nPagePerSector - 1) > nPageCount) /* 从pg1开始,剩余量不足一个sector */
         {
+            /* 写到数据库末尾所在的页即可 */
             nPage = nPageCount + 1 - pg1;
         }
         else
         {
-            nPage = nPagePerSector;
+            nPage = nPagePerSector; /* 否则写满完整的一个sector */
         }
         assert(nPage > 0);
         assert(pg1 <= pPg->pgno);
@@ -5989,6 +6090,7 @@ int sqlite3PagerWrite(DbPage *pDbPage)
         {
             Pgno pg = pg1 + ii;
             PgHdr *pPage;
+            /*  */
             if (pg == pPg->pgno || !sqlite3BitvecTest(pPager->pInJournal, pg))
             {
                 if (pg != PAGER_MJ_PGNO(pPager))
@@ -5996,6 +6098,7 @@ int sqlite3PagerWrite(DbPage *pDbPage)
                     rc = sqlite3PagerGet(pPager, pg, &pPage);
                     if (rc == SQLITE_OK)
                     {
+                        /* 写入日志文件 */
                         rc = pager_write(pPage);
                         if (pPage->flags & PGHDR_NEED_SYNC)
                         {
@@ -6038,7 +6141,7 @@ int sqlite3PagerWrite(DbPage *pDbPage)
         assert(pPager->doNotSyncSpill == 1);
         pPager->doNotSyncSpill--;
     }
-    else
+    else /* 1个扇区只能包含1页或者包含不了一页 */
     {
         rc = pager_write(pDbPage);
     }
@@ -6070,6 +6173,7 @@ int sqlite3PagerIswriteable(DbPage *pPg)
 **
 ** Tests show that this optimization can quadruple the speed of large
 ** DELETE operations.
+** 将一个页标记为不必再写会磁盘
 */
 void sqlite3PagerDontWrite(PgHdr *pPg)
 {
@@ -6222,6 +6326,7 @@ int sqlite3PagerSync(Pager *pPager)
 ** successful, or the connection is in WAL mode, SQLITE_OK is returned.
 ** Otherwise, either SQLITE_BUSY or an SQLITE_IOERR_XXX error code is
 ** returned.
+** 尝试获取排他锁(exclusive lock)
 */
 int sqlite3PagerExclusiveLock(Pager *pPager)
 {
@@ -6354,7 +6459,7 @@ int sqlite3PagerCommitPhaseOne(
                   );
             if (!zMaster && isOpen(pPager->jfd)
                 && pPager->journalOff == jrnlBufferSize(pPager)
-                && pPager->dbSize >= pPager->dbOrigSize
+                && pPager->dbSize >= pPager->dbOrigSize /* 数据库增加了新内容 */
                 && (0 == (pPg = sqlite3PcacheDirtyList(pPager->pPCache)) || 0 == pPg->pDirty)
                )
             {
@@ -6390,22 +6495,23 @@ int sqlite3PagerCommitPhaseOne(
             ** reading data from the database file.
             */
 #ifndef SQLITE_OMIT_AUTOVACUUM
-            if (pPager->dbSize < pPager->dbOrigSize
-                && pPager->journalMode != PAGER_JOURNALMODE_OFF
+            if (pPager->dbSize < pPager->dbOrigSize /* 数据库减小 */
+                && pPager->journalMode != PAGER_JOURNALMODE_OFF /* 开启了日志 */
                )
             {
                 Pgno i;                                   /* Iterator variable */
                 const Pgno iSkip = PAGER_MJ_PGNO(pPager); /* Pending lock page */
                 const Pgno dbSize = pPager->dbSize;       /* Database image size */
                 pPager->dbSize = pPager->dbOrigSize;
-                for (i = dbSize + 1; i <= pPager->dbOrigSize; i++)
+                for (i = dbSize + 1; i <= pPager->dbOrigSize; i++) /* 遍历被移除的page */
                 {
+                    /* 如果page不在日志文件中 */
                     if (!sqlite3BitvecTest(pPager->pInJournal, i) && i != iSkip)
                     {
                         PgHdr *pPage;             /* Page to journal */
-                        rc = sqlite3PagerGet(pPager, i, &pPage);
+                        rc = sqlite3PagerGet(pPager, i, &pPage); /* 获取page */
                         if (rc != SQLITE_OK) goto commit_phase_one_exit;
-                        rc = sqlite3PagerWrite(pPage);
+                        rc = sqlite3PagerWrite(pPage); /* 写入日志文件 */
                         sqlite3PagerUnref(pPage);
                         if (rc != SQLITE_OK) goto commit_phase_one_exit;
                     }
@@ -6457,7 +6563,7 @@ int sqlite3PagerCommitPhaseOne(
             /* Finally, sync the database file. */
             if (!noSync)
             {
-                rc = sqlite3PagerSync(pPager);
+                rc = sqlite3PagerSync(pPager); /* 同步至磁盘 */
             }
             IOTRACE(("DBSYNC %p\n", pPager))
         }
@@ -6519,7 +6625,7 @@ int sqlite3PagerCommitPhaseTwo(Pager *pPager)
        )
     {
         assert(pPager->journalOff == JOURNAL_HDR_SZ(pPager) || !pPager->journalOff);
-        pPager->eState = PAGER_READER;
+        pPager->eState = PAGER_READER; /* 需要释放锁 */
         return SQLITE_OK;
     }
 
@@ -6553,6 +6659,7 @@ int sqlite3PagerCommitPhaseTwo(Pager *pPager)
 ** current transaction are either expelled from the cache or reverted to
 ** their pre-transaction state by re-reading data from the database or
 ** WAL files. The WAL transaction is then closed.
+** 回滚
 */
 int sqlite3PagerRollback(Pager *pPager)
 {
@@ -6624,6 +6731,7 @@ int sqlite3PagerRefcount(Pager *pPager)
 /*
 ** Return the approximate number of bytes of memory currently
 ** used by the pager and its associated cache.
+** 返回大致的内存使用量
 */
 int sqlite3PagerMemUsed(Pager *pPager)
 {
@@ -6795,6 +6903,7 @@ int sqlite3PagerOpenSavepoint(Pager *pPager, int nSavepoint)
 ** This function may return SQLITE_NOMEM if a memory allocation fails,
 ** or an IO error code if an IO error occurs while rolling back a
 ** savepoint. If no errors occur, SQLITE_OK is returned.
+** 回滚或者释放一个savepoint
 */
 int sqlite3PagerSavepoint(Pager *pPager, int op, int iSavepoint)
 {
@@ -6821,7 +6930,7 @@ int sqlite3PagerSavepoint(Pager *pPager, int op, int iSavepoint)
 
         /* If this is a release of the outermost savepoint, truncate
         ** the sub-journal to zero bytes in size. */
-        if (op == SAVEPOINT_RELEASE)
+        if (op == SAVEPOINT_RELEASE) /* 释放savepoint */
         {
             if (nNew == 0 && isOpen(pPager->sjfd))
             {
@@ -6877,6 +6986,7 @@ const sqlite3_vfs *sqlite3PagerVfs(Pager *pPager)
 ** Return the file handle for the database file associated
 ** with the pager.  This might return NULL if the file has
 ** not yet been opened.
+** 返回文件描述符
 */
 sqlite3_file *sqlite3PagerFile(Pager *pPager)
 {
@@ -6885,6 +6995,7 @@ sqlite3_file *sqlite3PagerFile(Pager *pPager)
 
 /*
 ** Return the full pathname of the journal file.
+** 返回日志(journal)文件的全路径名称
 */
 const char *sqlite3PagerJournalname(Pager *pPager)
 {

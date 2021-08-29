@@ -50,13 +50,14 @@ static testpcacheGlobalType testpcacheGlobal;
 ** from a failed initialization attempt.  It also verifies that the
 ** the destructor always gets call - otherwise there would be a
 ** memory leak.
+** 初始化函数
 */
 static int testpcacheInit(void *pArg)
 {
     assert(pArg == (void*)&testpcacheGlobal);
     assert(testpcacheGlobal.pDummy == 0);
     assert(testpcacheGlobal.nInstance == 0);
-    testpcacheGlobal.pDummy = sqlite3_malloc(10);
+    testpcacheGlobal.pDummy = sqlite3_malloc(10); /* 验证分配是否正常 */
     return testpcacheGlobal.pDummy == 0 ? SQLITE_NOMEM : SQLITE_OK;
 }
 
@@ -65,6 +66,7 @@ static int testpcacheInit(void *pArg)
 **
 ** Verify that this is only called after initialization.
 ** Free the memory allocated by the initializer.
+** 析构函数
 */
 static void testpcacheShutdown(void *pArg)
 {
@@ -105,6 +107,7 @@ struct testpcache
 {
     int szPage;               /* Size of each page.  Multiple of 8. */
     int szExtra;              /* Size of extra data that accompanies each page */
+    /* 是否可回收 */
     int bPurgeable;           /* True if the page cache is purgeable */
     int nFree;                /* Number of unused slots in a[] */
     int nPinned;              /* Number of pinned slots in a[] */
@@ -120,6 +123,7 @@ struct testpcache
 
 /*
 ** Get a random number using the PRNG in the given page cache.
+** 获取一个随机值
 */
 static unsigned testpcacheRandom(testpcache *p)
 {
@@ -136,11 +140,12 @@ static unsigned testpcacheRandom(testpcache *p)
 
 /*
 ** Allocate a new page cache instance.
+** 分配一个新的cache(page cache)
 */
 static sqlite3_pcache *testpcacheCreate(
     int szPage,
     int szExtra,
-    int bPurgeable
+    int bPurgeable /* 是否可回收   */
 )
 {
     int nMem;
@@ -168,11 +173,12 @@ static sqlite3_pcache *testpcacheCreate(
         p->a[i].page.pExtra = (void*)&x[szPage];
     }
     testpcacheGlobal.nInstance++;
-    return (sqlite3_pcache*)p;
+    return (sqlite3_pcache*)p; /* 这里是强行将testpcache类型转换为了sqlite3_pcache类型 */
 }
 
 /*
 ** Set the cache size
+** 设置cache的大小
 */
 static void testpcacheCachesize(sqlite3_pcache *pCache, int newSize)
 {
@@ -185,6 +191,7 @@ static void testpcacheCachesize(sqlite3_pcache *pCache, int newSize)
 /*
 ** Return the number of pages in the cache that are being used.
 ** This includes both pinned and unpinned pages.
+** 返回cache中已经使用的page的个数
 */
 static int testpcachePagecount(sqlite3_pcache *pCache)
 {
@@ -197,6 +204,7 @@ static int testpcachePagecount(sqlite3_pcache *pCache)
 
 /*
 ** Fetch a page.
+** 获取一个page
 */
 static sqlite3_pcache_page *testpcacheFetch(
     sqlite3_pcache *pCache,
@@ -232,7 +240,7 @@ static sqlite3_pcache_page *testpcacheFetch(
     }
 
     /* If no pages are available, always fail */
-    if (p->nPinned == TESTPCACHE_NPAGE)
+    if (p->nPinned == TESTPCACHE_NPAGE) /* 内存不够 */
     {
         return 0;
     }
@@ -261,7 +269,7 @@ static sqlite3_pcache_page *testpcacheFetch(
         j = testpcacheRandom(p) % TESTPCACHE_NPAGE;
         for (i = 0; i < TESTPCACHE_NPAGE; i++, j = (j + 1) % TESTPCACHE_NPAGE)
         {
-            if (p->a[j].key == 0)
+            if (p->a[j].key == 0) /* 找到一个未使用的page */
             {
                 p->a[j].key = key;
                 p->a[j].isPinned = 1;
@@ -277,7 +285,7 @@ static sqlite3_pcache_page *testpcacheFetch(
         /* The prior loop always finds a freepage to allocate */
         assert(0);
     }
-
+    /* 运行到这里,说明已经找不到空闲的page */
     /* If this cache is not purgeable then we have to fail.
     */
     if (p->bPurgeable == 0)
@@ -291,7 +299,7 @@ static sqlite3_pcache_page *testpcacheFetch(
     j = testpcacheRandom(p) % TESTPCACHE_NPAGE;
     for (i = 0; i < TESTPCACHE_NPAGE; i++, j = (j + 1) % TESTPCACHE_NPAGE)
     {
-        if (p->a[j].key > 0 && p->a[j].isPinned == 0)
+        if (p->a[j].key > 0 && p->a[j].isPinned == 0) /* 尝试回收 */
         {
             p->a[j].key = key;
             p->a[j].isPinned = 1;
@@ -310,6 +318,7 @@ static sqlite3_pcache_page *testpcacheFetch(
 
 /*
 ** Unpin a page.
+** 等同于释放一个page
 */
 static void testpcacheUnpin(
     sqlite3_pcache *pCache,
@@ -423,7 +432,7 @@ static void testpcacheTruncate(sqlite3_pcache *pCache, unsigned iLimit)
     assert(testpcacheGlobal.nInstance > 0);
     for (i = 0; i < TESTPCACHE_NPAGE; i++)
     {
-        if (p->a[i].key >= iLimit)
+        if (p->a[i].key >= iLimit) /* 只要page的key值大于iLimit,都要释放 */
         {
             p->a[i].key = 0;
             if (p->a[i].isPinned)

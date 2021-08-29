@@ -18,7 +18,9 @@
 */
 struct PCache
 {
+    /* pDirty,pDirtyTail指向同一个链表的首尾 */
     PgHdr *pDirty, *pDirtyTail;         /* List of dirty pages in LRU order */
+    /* pSynced也指向dirty链表中的项--最后一个已经同步至磁盘的page */
     PgHdr *pSynced;                     /* Last synced page in dirty page list */
     int nRef;                           /* Number of referenced pages */
     int szCache;                        /* Configured cache size */
@@ -66,6 +68,7 @@ static int pcacheCheckSynced(PCache *pCache)
 
 /*
 ** Remove page pPage from the list of dirty pages.
+** 将pPage从dirty pages列表中移除
 */
 static void pcacheRemoveFromDirtyList(PgHdr *pPage)
 {
@@ -85,11 +88,11 @@ static void pcacheRemoveFromDirtyList(PgHdr *pPage)
         p->pSynced = pSynced;
     }
 
-    if (pPage->pDirtyNext)
+    if (pPage->pDirtyNext) /* 将pPage从Dierty链表中移除 */
     {
         pPage->pDirtyNext->pDirtyPrev = pPage->pDirtyPrev;
     }
-    else
+    else /* 否则的话, pPage位于链表尾部 */
     {
         assert(pPage == p->pDirtyTail);
         p->pDirtyTail = pPage->pDirtyPrev;
@@ -112,6 +115,7 @@ static void pcacheRemoveFromDirtyList(PgHdr *pPage)
 /*
 ** Add page pPage to the head of the dirty list (PCache1.pDirty is set to
 ** pPage).
+** 将page加入dirty链表
 */
 static void pcacheAddToDirtyList(PgHdr *pPage)
 {
@@ -192,6 +196,7 @@ int sqlite3PcacheSize(void)
 ** has already been allocated and is passed in as the p pointer.
 ** The caller discovers how much space needs to be allocated by
 ** calling sqlite3PcacheSize().
+** 构建一个Pcache对象
 */
 void sqlite3PcacheOpen(
     int szPage,                  /* Size of every page */
@@ -203,8 +208,8 @@ void sqlite3PcacheOpen(
 )
 {
     memset(p, 0, sizeof(PCache));
-    p->szPage = szPage;
-    p->szExtra = szExtra;
+    p->szPage = szPage; /* 页大小 */
+    p->szExtra = szExtra; /* 额外数据大小 */
     p->bPurgeable = bPurgeable;
     p->xStress = xStress;
     p->pStress = pStress;
@@ -214,6 +219,7 @@ void sqlite3PcacheOpen(
 /*
 ** Change the page size for PCache object. The caller must ensure that there
 ** are no outstanding page references when this function is called.
+** 更改页大小
 */
 void sqlite3PcacheSetPageSize(PCache *pCache, int szPage)
 {
@@ -229,6 +235,7 @@ void sqlite3PcacheSetPageSize(PCache *pCache, int szPage)
 
 /*
 ** Compute the number of pages of cache requested.
+** 计算缓存的页的数目
 */
 static int numberOfCachePages(PCache *p)
 {
@@ -244,6 +251,7 @@ static int numberOfCachePages(PCache *p)
 
 /*
 ** Try to obtain a page from the cache.
+** 根据页号,从cache中获取一个页(page)
 */
 int sqlite3PcacheFetch(
     PCache *pCache,       /* Obtain the page from this cache */
@@ -276,7 +284,7 @@ int sqlite3PcacheFetch(
         sqlite3GlobalConfig.pcache2.xCachesize(p, numberOfCachePages(pCache));
         pCache->pCache = p;
     }
-
+    /* 是否需要创建 */
     eCreate = createFlag * (1 + (!pCache->bPurgeable || !pCache->pDirty));
     if (pCache->pCache)
     {
@@ -351,7 +359,7 @@ int sqlite3PcacheFetch(
             pCache->pPage1 = pPgHdr;
         }
     }
-    *ppPage = pPgHdr;
+    *ppPage = pPgHdr; /* 记录结果 */
     return (pPgHdr == 0 && eCreate) ? SQLITE_NOMEM : SQLITE_OK;
 }
 
@@ -393,6 +401,7 @@ void sqlite3PcacheRef(PgHdr *p)
 ** Drop a page from the cache. There must be exactly one reference to the
 ** page. This function deletes that reference, so after it returns the
 ** page pointed to by p is invalid.
+** 从cache中删除一个page
 */
 void sqlite3PcacheDrop(PgHdr *p)
 {
@@ -408,12 +417,14 @@ void sqlite3PcacheDrop(PgHdr *p)
     {
         pCache->pPage1 = 0;
     }
+    /* 这里实际会调用pcache1Unpin函数 */
     sqlite3GlobalConfig.pcache2.xUnpin(pCache->pCache, p->pPage, 1);
 }
 
 /*
 ** Make sure the page is marked as dirty. If it isn't dirty already,
 ** make it so.
+** 将指定的page标记为dirty
 */
 void sqlite3PcacheMakeDirty(PgHdr *p)
 {
@@ -445,6 +456,7 @@ void sqlite3PcacheMakeClean(PgHdr *p)
 
 /*
 ** Make every page in the cache clean.
+** 将所有的page都标记为clean
 */
 void sqlite3PcacheCleanAll(PCache *pCache)
 {
@@ -463,7 +475,7 @@ void sqlite3PcacheClearSyncFlags(PCache *pCache)
     PgHdr *p;
     for (p = pCache->pDirty; p; p = p->pDirtyNext)
     {
-        p->flags &= ~PGHDR_NEED_SYNC;
+        p->flags &= ~PGHDR_NEED_SYNC; /* 去掉NEED_SYNC标记 */
     }
     pCache->pSynced = pCache->pDirtyTail;
 }
@@ -697,11 +709,13 @@ void sqlite3PcacheSetCachesize(PCache *pCache, int mxPage)
 
 /*
 ** Free up as much memory as possible from the page cache.
+** 从page cache中尽量释放内存
 */
 void sqlite3PcacheShrink(PCache *pCache)
 {
     if (pCache->pCache)
     {
+        /* 实际会调用pcache1Shrink */
         sqlite3GlobalConfig.pcache2.xShrink(pCache->pCache);
     }
 }

@@ -270,6 +270,7 @@ void sqlite3MemJournalOpen(sqlite3_file *pJfd)
 /*
 ** Return true if the file-handle passed as an argument is
 ** an in-memory journal
+** 是否为内存日志(不写入磁盘)
 */
 int sqlite3IsMemJournal(sqlite3_file *pJfd)
 {

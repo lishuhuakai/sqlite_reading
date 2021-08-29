@@ -106,6 +106,7 @@ static u8 randomByte(void)
 
 /*
 ** Return N random bytes.
+** 产生N个字节的随机比特
 */
 void sqlite3_randomness(int N, void *pBuf)
 {

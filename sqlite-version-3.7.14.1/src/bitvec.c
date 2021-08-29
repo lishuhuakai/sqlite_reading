@@ -36,6 +36,7 @@
 */
 #include "sqliteInt.h"
 
+/* 位图的实现 */
 /* Size of the Bitvec structure in bytes. */
 #define BITVEC_SZ        512
 
@@ -94,16 +95,19 @@ struct Bitvec
 {
     u32 iSize;      /* Maximum bit index.  Max iSize is 4,294,967,296. */
     u32 nSet;       /* Number of bits that are set - only valid for aHash
-                  ** element.  Max is BITVEC_NINT.  For BITVEC_SZ of 512,
-                  ** this would be 125. */
+                     ** element.  Max is BITVEC_NINT.  For BITVEC_SZ of 512,
+                     ** this would be 125. */
+    /* 每一个apSub[]实例处理的位的数量,如果位图数目实在过多,Bitvec会递归来表示位图 */
     u32 iDivisor;   /* Number of bits handled by each apSub[] entry. */
     /* Should >=0 for apSub element. */
     /* Max iDivisor is max(u32) / BITVEC_NPTR + 1.  */
     /* For a BITVEC_SZ of 512, this would be 34,359,739. */
     union
     {
+        /* 当位的数量比较小的时候,直接使用aBitmap */
         BITVEC_TELEM aBitmap[BITVEC_NELEM];    /* Bitmap representation */
         u32 aHash[BITVEC_NINT];      /* Hash table representation */
+        /* 递归 */
         Bitvec *apSub[BITVEC_NPTR];  /* Recursive representation */
     } u;
 };
@@ -112,6 +116,7 @@ struct Bitvec
 ** Create a new bitmap object able to handle bits between 0 and iSize,
 ** inclusive.  Return a pointer to the new object.  Return NULL if
 ** malloc fails.
+** 创建一个位图实例, iSize为位图最高的索引
 */
 Bitvec *sqlite3BitvecCreate(u32 iSize)
 {
@@ -129,13 +134,14 @@ Bitvec *sqlite3BitvecCreate(u32 iSize)
 ** Check to see if the i-th bit is set.  Return true or false.
 ** If p is NULL (if the bitmap has not been created) or if
 ** i is out of range, then return false.
+** 检查第i个bit是否被设置
 */
 int sqlite3BitvecTest(Bitvec *p, u32 i)
 {
     if (p == 0) return 0;
     if (i > p->iSize || i == 0) return 0;
     i--;
-    while (p->iDivisor)
+    while (p->iDivisor) /* 获取位图 */
     {
         u32 bin = i / p->iDivisor;
         i = i % p->iDivisor;
@@ -145,11 +151,11 @@ int sqlite3BitvecTest(Bitvec *p, u32 i)
             return 0;
         }
     }
-    if (p->iSize <= BITVEC_NBIT)
+    if (p->iSize <= BITVEC_NBIT) /* 位图实现 */
     {
         return (p->u.aBitmap[i / BITVEC_SZELEM] & (1 << (i & (BITVEC_SZELEM - 1)))) != 0;
     }
-    else
+    else /* hash实现 */
     {
         u32 h = BITVEC_HASH(i++);
         while (p->u.aHash[h])
@@ -172,6 +178,7 @@ int sqlite3BitvecTest(Bitvec *p, u32 i)
 ** The calling function must ensure that p is a valid Bitvec object
 ** and that the value for "i" is within range of the Bitvec object.
 ** Otherwise the behavior is undefined.
+** 设置第i个bit位
 */
 int sqlite3BitvecSet(Bitvec *p, u32 i)
 {
@@ -186,7 +193,7 @@ int sqlite3BitvecSet(Bitvec *p, u32 i)
         i = i % p->iDivisor;
         if (p->u.apSub[bin] == 0)
         {
-            p->u.apSub[bin] = sqlite3BitvecCreate(p->iDivisor);
+            p->u.apSub[bin] = sqlite3BitvecCreate(p->iDivisor); /* 动态创建一个Bitvec */
             if (p->u.apSub[bin] == 0) return SQLITE_NOMEM;
         }
         p = p->u.apSub[bin];

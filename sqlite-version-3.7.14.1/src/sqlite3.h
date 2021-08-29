@@ -6193,6 +6193,7 @@ SQLITE_API int sqlite3_stmt_status(sqlite3_stmt*, int op, int resetFlg);
 ** to the object.
 **
 ** See [sqlite3_pcache_methods2] for additional information.
+** sqlite3_pcache这个结构是由插件定义的
 */
 typedef struct sqlite3_pcache sqlite3_pcache;
 

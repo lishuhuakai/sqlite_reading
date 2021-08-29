@@ -89,6 +89,9 @@ int sqlite3OsSync(sqlite3_file *id, int flags)
     DO_OS_MALLOC_TEST(id);
     return id->pMethods->xSync(id, flags);
 }
+/*
+** 获取文件大小,将结果存储值*pSize之中
+*/
 int sqlite3OsFileSize(sqlite3_file *id, i64 *pSize)
 {
     DO_OS_MALLOC_TEST(id);
@@ -99,6 +102,10 @@ int sqlite3OsLock(sqlite3_file *id, int lockType)
     DO_OS_MALLOC_TEST(id);
     return id->pMethods->xLock(id, lockType);
 }
+/*
+** 执行解锁操作
+** @param lockType 锁类型
+*/
 int sqlite3OsUnlock(sqlite3_file *id, int lockType)
 {
     return id->pMethods->xUnlock(id, lockType);

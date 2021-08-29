@@ -22,13 +22,15 @@ typedef struct PCache PCache;
 ** Every page in the cache is controlled by an instance of the following
 ** structure.
 */
-struct PgHdr
+struct PgHdr /* 对页(page)的抽象 */
 {
     sqlite3_pcache_page *pPage;    /* Pcache object page handle */
     void *pData;                   /* Page data */
     void *pExtra;                  /* Extra content */
+    /* 脏页 */
     PgHdr *pDirty;                 /* Transient list of dirty pages */
     Pager *pPager;                 /* The pager this page is part of */
+    /* 页号 */
     Pgno pgno;                     /* Page number for this page */
 #ifdef SQLITE_CHECK_PAGES
     u32 pageHash;                  /* Hash of page content */
@@ -40,6 +42,7 @@ struct PgHdr
     ** and should not be accessed by other modules.
     */
     i16 nRef;                      /* Number of users of this page */
+    /* 指向包含了此page的cache对象 */
     PCache *pCache;                /* Cache that owns this page */
 
     PgHdr *pDirtyNext;             /* Next element in list of dirty pages */
@@ -47,6 +50,7 @@ struct PgHdr
 };
 
 /* Bit values for PgHdr.flags */
+/* 页发生更改 */
 #define PGHDR_DIRTY             0x002  /* Page has changed */
 #define PGHDR_NEED_SYNC         0x004  /* Fsync the rollback journal before
                                        ** writing this page to the database */
