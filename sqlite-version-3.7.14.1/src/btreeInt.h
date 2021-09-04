@@ -272,8 +272,10 @@ typedef struct BtLock BtLock;
 struct MemPage
 {
     u8 isInit;           /* True if previously initialized. MUST BE FIRST! */
+    /* 存储在aCell[]数组中, overflow cell的个数 */
     u8 nOverflow;        /* Number of overflow cell bodies in aCell[] */
     u8 intKey;           /* True if intkey flag is set */
+    /* 是否为叶子节点 */
     u8 leaf;             /* True if leaf flag is set */
     u8 hasData;          /* True if this page stores data */
     u8 hdrOffset;        /* 100 for page 1.  0 otherwise */
@@ -281,18 +283,24 @@ struct MemPage
     u8 max1bytePayload;  /* min(maxLocal,127) */
     u16 maxLocal;        /* Copy of BtShared.maxLocal or BtShared.maxLeaf */
     u16 minLocal;        /* Copy of BtShared.minLocal or BtShared.minLeaf */
+    /* cellOffset记录第一个cell pinter的偏移位置 */
     u16 cellOffset;      /* Index in aData of first cell pointer */
+    /* page中可用空间大小 */
     u16 nFree;           /* Number of free bytes on the page */
+    /* 本页中cell的个数 */
     u16 nCell;           /* Number of cells on this page, local and ovfl */
     u16 maskPage;        /* Mask for page offset */
+    /* aiOvfl[i]个cell是overflow cell */
     u16 aiOvfl[5];       /* Insert the i-th overflow cell before the aiOvfl-th
                        ** non-overflow cell */
+    /* apOvfl指向overflow cell的首部 */
     u8 *apOvfl[5];       /* Pointers to the body of overflow cells */
     BtShared *pBt;       /* Pointer to BtShared that this page is part of */
     u8 *aData;           /* Pointer to disk image of the page data */
     u8 *aDataEnd;        /* One byte past the end of usable data */
     u8 *aCellIdx;        /* The cell index area */
     DbPage *pDbPage;     /* Pager page handle */
+    /* 页号 */
     Pgno pgno;           /* Page number for this page */
 };
 
@@ -313,6 +321,7 @@ struct MemPage
 struct BtLock
 {
     Btree *pBtree;        /* Btree handle holding this lock */
+    /* 表的root page */
     Pgno iTable;          /* Root page of table */
     u8 eLock;             /* READ_LOCK or WRITE_LOCK */
     BtLock *pNext;        /* Next in BtShared.pLock list */
@@ -347,6 +356,7 @@ struct Btree
 {
     sqlite3 *db;       /* The database connection holding this btree */
     BtShared *pBt;     /* Sharable content of this btree */
+    /* inTrans表示事务的类型 */
     u8 inTrans;        /* TRANS_NONE, TRANS_READ or TRANS_WRITE */
     u8 sharable;       /* True if we can share pBt with another db */
     u8 locked;         /* True if db currently has pBt locked */
@@ -372,13 +382,15 @@ struct Btree
 
 /*
 ** An instance of this object represents a single database file.
-**
+**  此结构的一个实例代表一个单个数据库文件.
 ** A single database file can be in use at the same time by two
 ** or more database connections.  When two or more connections are
 ** sharing the same database file, each connection has it own
 ** private Btree object for the file and each of those Btrees points
 ** to this one BtShared object.  BtShared.nRef is the number of
 ** connections currently sharing this database file.
+** 单个数据库文件可以在同时被2个或者多个连接使用,每个连接都有自己私有的Btree实例,
+** 这些Btree实例共享一个BtShared实例. BtShared.nRef代表共享连接个数.
 **
 ** Fields in this structure are accessed under the BtShared.mutex
 ** mutex, except for nRef and pNext which are accessed under the
@@ -405,7 +417,7 @@ struct Btree
 **
 **   This feature is included to help prevent writer-starvation.
 */
-struct BtShared
+struct BtShared /* BtShared代表Btree中可以共享的部分 */
 {
     Pager *pPager;        /* The page cache */
     sqlite3 *db;          /* Database connection currently using this Btree */
@@ -413,17 +425,20 @@ struct BtShared
     MemPage *pPage1;      /* First page of the database */
     u8 openFlags;         /* Flags to sqlite3BtreeOpen() */
 #ifndef SQLITE_OMIT_AUTOVACUUM
+    /* 自动释放空间 */
     u8 autoVacuum;        /* True if auto-vacuum is enabled */
     u8 incrVacuum;        /* True if incr-vacuum is enabled */
 #endif
     u8 inTransaction;     /* Transaction state */
     u8 max1bytePayload;   /* Maximum first byte of cell for a 1-byte payload */
     u16 btsFlags;         /* Boolean parameters.  See BTS_* macros below */
+    /* 非叶数据节点的最大payload */
     u16 maxLocal;         /* Maximum local payload in non-LEAFDATA tables */
     u16 minLocal;         /* Minimum local payload in non-LEAFDATA tables */
     u16 maxLeaf;          /* Maximum local payload in a LEAFDATA table */
     u16 minLeaf;          /* Minimum local payload in a LEAFDATA table */
     u32 pageSize;         /* Total number of bytes on a page */
+    /* 每页中可用的字节数,和已经使用的字节数区别开来 */
     u32 usableSize;       /* Number of usable bytes on each page */
     int nTransaction;     /* Number of open transactions (read + write) */
     u32 nPage;            /* Number of pages in the database */
@@ -463,9 +478,13 @@ struct CellInfo
     u8 *pCell;     /* Pointer to the start of cell content */
     u32 nData;     /* Number of bytes of data */
     u32 nPayload;  /* Total amount of payload */
+    /* cell 头部所占用的字节数目 */
     u16 nHeader;   /* Size of the cell content header in bytes */
+    /* 本page所持有的数据量 */
     u16 nLocal;    /* Amount of payload held locally */
+    /* cell在overflow page中的偏移量 */
     u16 iOverflow; /* Offset to overflow page number.  Zero if no overflow */
+    /* cell在main b-tree page中占用的字节数 */
     u16 nSize;     /* Size of the cell content on the main b-tree page */
 };
 
@@ -483,6 +502,7 @@ struct CellInfo
 /*
 ** A cursor is a pointer to a particular entry within a particular
 ** b-tree within a database file.
+** 游标(cursor)是数据库文件中一个b-tree中的指针,指向一个特殊的entry
 **
 ** The entry is identified by its MemPage and the index in
 ** MemPage.aCell[] of the entry.
@@ -490,6 +510,7 @@ struct CellInfo
 ** A single database file can be shared by two more database connections,
 ** but cursors cannot be shared.  Each cursor is associated with a
 ** particular database connection identified BtCursor.pBtree.db.
+** 游标不能在不同连接中共享
 **
 ** Fields in this structure are accessed under the BtShared.mutex
 ** found at self->pBt->mutex.
@@ -503,6 +524,7 @@ struct BtCursor
 #ifndef SQLITE_OMIT_INCRBLOB
     Pgno *aOverflow;          /* Cache of overflow page locations */
 #endif
+    /* root页的页号 */
     Pgno pgnoRoot;            /* The root page of this tree */
     sqlite3_int64 cachedRowid; /* Next rowid cache.  0 means not valid */
     CellInfo info;            /* A parse of the cell we are pointing at */
@@ -510,6 +532,7 @@ struct BtCursor
     void *pKey;      /* Saved key that was cursor's last known position */
     int skipNext;    /* Prev() is noop if negative. Next() is noop if positive */
     u8 wrFlag;                /* True if writable */
+    /* 游标是否指向了最后一个entry */
     u8 atLast;                /* Cursor pointing to the last entry */
     u8 validNKey;             /* True if info.nKey is valid */
     u8 eState;                /* One of the CURSOR_XXX constants (see below) */
@@ -517,7 +540,11 @@ struct BtCursor
     u8 isIncrblobHandle;      /* True if this cursor is an incr. io handle */
 #endif
     u8 hints;                             /* As configured by CursorSetHints() */
+    /* iPage是apPage中的索引 */
     i16 iPage;                            /* Index of current page in apPage */
+    /* 关于aiIdx以及apPage两个数组
+    ** apPage数组记录每一层的page,aiIdx记录每一层访问cell的索引
+    */
     u16 aiIdx[BTCURSOR_MAX_DEPTH];        /* Current index in apPage[i] */
     MemPage *apPage[BTCURSOR_MAX_DEPTH];  /* Pages from root to current page */
 };

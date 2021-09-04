@@ -445,6 +445,7 @@ int sqlite3PagerTrace = 1; /* True to enable tracing */
 typedef struct PagerSavepoint PagerSavepoint;
 struct PagerSavepoint /* 保存点 */
 {
+    /* 主日志中的偏移量 */
     i64 iOffset;                 /* Starting offset in main journal */
     i64 iHdrOffset;              /* See above */
     Bitvec *pInSavepoint;        /* Set of pages in this savepoint */
@@ -6348,8 +6349,10 @@ int sqlite3PagerExclusiveLock(Pager *pPager)
 ** of a master journal file that should be written into the individual
 ** journal file. zMaster may be NULL, which is interpreted as no master
 ** journal (a single database transaction).
+** 同步数据库文件,zMaster记录这主日志的文件名,如果zMaster为空,表示无需主日志.
 **
 ** This routine ensures that:
+** 本函数保证:
 **
 **   * The database file change-counter is updated,
 **   * the journal is synced (unless the atomic-write optimization is used),
@@ -6811,6 +6814,7 @@ int sqlite3PagerIsMemdb(Pager *pPager)
 ** currently less than nSavepoints open, then open one or more savepoints
 ** to make up the difference. If the number of savepoints is already
 ** equal to nSavepoint, then this function is a no-op.
+** 创建一个新的保存点
 **
 ** If a memory allocation fails, SQLITE_NOMEM is returned. If an error
 ** occurs while opening the sub-journal file, then an IO error code is
@@ -6821,7 +6825,7 @@ int sqlite3PagerOpenSavepoint(Pager *pPager, int nSavepoint)
     int rc = SQLITE_OK;                       /* Return code */
     int nCurrent = pPager->nSavepoint;        /* Current number of savepoints */
 
-    assert(pPager->eState >= PAGER_WRITER_LOCKED);
+    assert(pPager->eState >= PAGER_WRITER_LOCKED); /* 保证已经加了写锁 */
     assert(assert_pager_state(pPager));
 
     if (nSavepoint > nCurrent && pPager->useJournal)
@@ -6832,6 +6836,7 @@ int sqlite3PagerOpenSavepoint(Pager *pPager, int nSavepoint)
         /* Grow the Pager.aSavepoint array using realloc(). Return SQLITE_NOMEM
         ** if the allocation fails. Otherwise, zero the new portion in case a
         ** malloc failure occurs while populating it in the for(...) loop below.
+        ** 重新分配
         */
         aNew = (PagerSavepoint *)sqlite3Realloc(
                    pPager->aSavepoint, sizeof(PagerSavepoint) * nSavepoint
@@ -6853,9 +6858,10 @@ int sqlite3PagerOpenSavepoint(Pager *pPager, int nSavepoint)
             }
             else
             {
-                aNew[ii].iOffset = JOURNAL_HDR_SZ(pPager);
+                aNew[ii].iOffset = JOURNAL_HDR_SZ(pPager); /* 开始的位置 */
             }
             aNew[ii].iSubRec = pPager->nSubRec;
+            /* 保存点中页的个数 */
             aNew[ii].pInSavepoint = sqlite3BitvecCreate(pPager->dbSize);
             if (!aNew[ii].pInSavepoint)
             {

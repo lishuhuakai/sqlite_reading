@@ -100,6 +100,7 @@ static void removeFromBlockedList(sqlite3 *db)
 /*
 ** Add connection db to the blocked connections list. It is assumed
 ** that it is not already a part of the list.
+** 将db这个sqlite3实例加入阻塞列表
 */
 static void addToBlockedList(sqlite3 *db)
 {
@@ -220,6 +221,7 @@ void sqlite3ConnectionBlocked(sqlite3 *db, sqlite3 *pBlocker)
     {
         addToBlockedList(db);
     }
+    /* db这个sqlite3实例不能获取到锁,被pBlocker这个实例阻塞了 */
     db->pBlockingConnection = pBlocker;
     leaveMutex();
 }

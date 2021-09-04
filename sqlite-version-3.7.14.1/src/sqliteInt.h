@@ -916,13 +916,16 @@ struct sqlite3
 #ifdef SQLITE_ENABLE_UNLOCK_NOTIFY
     /* The following variables are all protected by the STATIC_MASTER
     ** mutex, not by sqlite3.mutex. They are used by code in notify.c.
-    **
+    ** 接下来的变量被STATIC_MASTER mutex保护,而不是sqlite3 mutex
     ** When X.pUnlockConnection==Y, that means that X is waiting for Y to
     ** unlock so that it can proceed.
+    ** 当X.pUnlockConnection==Y,意味着X在等待Y解锁,只有这样,x才能继续处理.
     **
     ** When X.pBlockingConnection==Y, that means that something that X tried
     ** tried to do recently failed with an SQLITE_LOCKED error due to locks
     ** held by Y.
+    ** 当X.pBlockingConnection==Y,意味着X尝试做一些事情,但是因为SQLITE_LOCKED错误而失败了,
+    ** 因为锁被Y持有.
     */
     sqlite3 *pBlockingConnection; /* Connection that caused SQLITE_LOCKED */
     sqlite3 *pUnlockConnection;           /* Connection to watch for unlock */
@@ -1436,6 +1439,7 @@ struct FKey
 ** An instance of the following structure is passed as the first
 ** argument to sqlite3VdbeKeyCompare and is used to control the
 ** comparison of the two index keys.
+** KeyInfo的实例用于两个索引key之间的比较
 */
 struct KeyInfo
 {

@@ -13,6 +13,7 @@
 ** subsystem.  See comments in the source code for a detailed description
 ** of what each interface routine does.
 */
+/* B树的实现 */
 #ifndef _BTREE_H_
 #define _BTREE_H_
 
