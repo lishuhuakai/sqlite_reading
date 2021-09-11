@@ -299,8 +299,6 @@ static void applyNumericAffinity(Mem *pRec)
 **    is not possible.  Note that the integer representation is
 **    always preferred, even if the affinity is REAL, because
 **    an integer representation is more space efficient on disk.
-**    尝试将pRec转换为整数或者浮点数表示,如果整数表示是可能的话.我们总是倾向于表示为整数
-**    即使affinity为REAL,因为整数表示在磁盘上更加高效
 **
 ** SQLITE_AFF_TEXT:
 **    Convert pRec to a text representation.
@@ -322,7 +320,7 @@ static void applyAffinity(
         */
         if (0 == (pRec->flags & MEM_Str) && (pRec->flags & (MEM_Real | MEM_Int)))
         {
-            sqlite3VdbeMemStringify(pRec, enc); /* 转换为字符串表示 */
+            sqlite3VdbeMemStringify(pRec, enc);
         }
         pRec->flags &= ~(MEM_Real | MEM_Int);
     }
@@ -769,8 +767,6 @@ int sqlite3VdbeExec(
         ** external allocations out of mem[p2] and set mem[p2] to be
         ** an undefined integer.  Opcodes will either fill in the integer
         ** value or convert mem[p2] to a different type.
-        ** 如果opcode带有out2-prerelease标记,释放mem[p2],设置mem[p2]为未定义的整数.
-        **
         */
         assert(pOp->opflags == sqlite3OpcodeProperty[pOp->opcode]);
         if (pOp->opflags & OPFLG_OUT2_PRERELEASE)
@@ -1065,7 +1061,7 @@ int sqlite3VdbeExec(
             **
             ** P4 points to a nul terminated UTF-8 string. This opcode is transformed
             ** into an OP_String before it is executed for the first time.
-            ** P4指向一个非空的字符串,将P4指向的字符串,放入P2指向的寄存器
+            ** P4指向一个非空的字符串,
             */
             case OP_String8:           /* same as TK_STRING, out2-prerelease */
             {
@@ -1122,7 +1118,7 @@ int sqlite3VdbeExec(
             ** NULL into register P3 and ever register in between P2 and P3.  If P3
             ** is less than P2 (typically P3 is zero) then only register P2 is
             ** set to NULL
-            ** 将NULL写入寄存器P2,如果P3比P2要大,同时将NULL写入P3
+            ** 将NULL写入寄存器P2,如果P3比P2要大,将NULL写入P3
             */
             case OP_Null:             /* out2-prerelease */
             {
@@ -1228,11 +1224,9 @@ int sqlite3VdbeExec(
             /* Opcode: Copy P1 P2 * * *
             **
             ** Make a copy of register P1 into register P2.
-            ** 拷贝寄存器P1的值到寄存器P2
             **
             ** This instruction makes a deep copy of the value.  A duplicate
             ** is made of any string or blob constant.  See also OP_SCopy.
-            ** 这条指令做深度拷贝
             */
             case OP_Copy:               /* in1, out2 */
             {
@@ -1787,7 +1781,6 @@ int sqlite3VdbeExec(
             **
             ** Add the constant P2 to the value in register P1.
             ** The result is always an integer.
-            ** P1寄存器的值加上常量P2
             **
             ** To force any register to be an integer, just add 0.
             */
@@ -1927,8 +1920,6 @@ int sqlite3VdbeExec(
             ** The value is currently a real number, drop its fractional part.
             ** If the value is text or blob, try to convert it to an integer using the
             ** equivalent of atoi() and store 0 if no such conversion is possible.
-            ** 将P1寄存器的值强制转换为int,如果当前的值是一个浮点数,去掉分数部分,如果值是text或者blob
-            ** 使用atoi或者等价函数来转换,如果不可转换,直接存储0.
             **
             ** A NULL value is not changed by this routine.  It remains NULL.
             */
@@ -2857,13 +2848,10 @@ int sqlite3VdbeExec(
             ** Convert P2 registers beginning with P1 into the [record format]
             ** use as a data record in a database table or as a key
             ** in an index.  The OP_Column opcode can decode the record later.
-            ** 将以P1指示的寄存器开始,P2个的值转换为record, record将用作数据或者索引的key,OP_Column操作码
-            ** 可以稍后解码记录.
             **
             ** P4 may be a string that is P2 characters long.  The nth character of the
             ** string indicates the column affinity that should be used for the nth
             ** field of the index key.
-            ** P4可能是一个长度为P2个字符的字符串.
             **
             ** The mapping from character to affinity is given by the SQLITE_AFF_
             ** macros defined in sqliteInt.h.
@@ -2872,7 +2860,6 @@ int sqlite3VdbeExec(
             */
             case OP_MakeRecord:
             {
-                /* 记录新的record */
                 u8 *zNewRecord;        /* A buffer to hold the data for the new record */
                 Mem *pRec;             /* The new record */
                 u64 nData;             /* Number of bytes of data space */
@@ -2891,7 +2878,6 @@ int sqlite3VdbeExec(
 
                 /* Assuming the record contains N fields, the record format looks
                 ** like this:
-                ** 假定record包含N个字段, record的格式如下:
                 **
                 ** ------------------------------------------------------------------------
                 ** | hdr-size | type 0 | type 1 | ... | type N-1 | data0 | ... | data N-1 |
@@ -2899,13 +2885,11 @@ int sqlite3VdbeExec(
                 **
                 ** Data(0) is taken from register P1.  Data(1) comes from register P1+1
                 ** and so froth.
-                ** Data(0)从寄存器P1中取, Data(1)从寄存器P1+1中取...
                 **
                 ** Each type field is a varint representing the serial type of the
                 ** corresponding data element (see sqlite3VdbeSerialType()). The
                 ** hdr-size field is also a varint which is the offset from the beginning
                 ** of the record to data0.
-                ** 每一个类型字段都是一个varint,hdr-size也是一个varint,记录着data0的偏移
                 */
                 nData = 0;         /* Number of bytes of data space */
                 nHdr = 0;          /* Number of bytes of header space */
@@ -2913,9 +2897,9 @@ int sqlite3VdbeExec(
                 nField = pOp->p1;
                 zAffinity = pOp->p4.z;
                 assert(nField > 0 && pOp->p2 > 0 && pOp->p2 + nField <= p->nMem + 1);
-                pData0 = &aMem[nField]; /* 指向data(0) */
-                nField = pOp->p2; /* 字段个数 */
-                pLast = &pData0[nField - 1]; /* 最后一个data */
+                pData0 = &aMem[nField];
+                nField = pOp->p2;
+                pLast = &pData0[nField - 1];
                 file_format = p->minWriteFileFormat;
 
                 /* Identify the output register */
@@ -2925,7 +2909,6 @@ int sqlite3VdbeExec(
 
                 /* Loop through the elements that will make up the record to figure
                 ** out how much space is required for the new record.
-                ** 计算消耗的空间
                 */
                 for (pRec = pData0; pRec <= pLast; pRec++)
                 {
@@ -2940,7 +2923,7 @@ int sqlite3VdbeExec(
                     }
                     serial_type = sqlite3VdbeSerialType(pRec, file_format);
                     len = sqlite3VdbeSerialTypeLen(serial_type);
-                    nData += len; /* 获取长度 */
+                    nData += len;
                     nHdr += sqlite3VarintLen(serial_type);
                     if (pRec->flags & MEM_Zero)
                     {
@@ -2979,7 +2962,7 @@ int sqlite3VdbeExec(
 
                 /* Write the record */
                 i = putVarint32(zNewRecord, nHdr);
-                for (pRec = pData0; pRec <= pLast; pRec++) /* 将数据写入 */
+                for (pRec = pData0; pRec <= pLast; pRec++)
                 {
                     serial_type = sqlite3VdbeSerialType(pRec, file_format);
                     i += putVarint32(&zNewRecord[i], serial_type);      /* serial type */
@@ -3035,10 +3018,6 @@ int sqlite3VdbeExec(
             ** Open, release or rollback the savepoint named by parameter P4, depending
             ** on the value of P1. To open a new savepoint, P1==0. To release (commit) an
             ** existing savepoint, P1==1, or to rollback an existing savepoint P1==2.
-            ** 打开或者释放或者回滚一个savepoint,它的名字由参数P4指定.
-            ** P1==0, 打开一个savepoint
-            ** P1==1, 释放一个savepoint
-            ** P1==2, 回滚一个savepoint
             */
             case OP_Savepoint:
             {
@@ -3108,7 +3087,6 @@ int sqlite3VdbeExec(
                             }
 
                             /* Link the new savepoint into the database handle's list. */
-                            /* 添加至链表首部 */
                             pNew->pNext = db->pSavepoint;
                             db->pSavepoint = pNew;
                             pNew->nDeferredCons = db->nDeferredCons;
@@ -3118,7 +3096,7 @@ int sqlite3VdbeExec(
                 else
                 {
                     iSavepoint = 0;
-                    /* 首先找到对应的savepoint */
+
                     /* Find the named savepoint. If there is no such savepoint, then an
                     ** an error is returned to the user.  */
                     for (
@@ -3127,7 +3105,7 @@ int sqlite3VdbeExec(
                         pSavepoint = pSavepoint->pNext
                     )
                     {
-                        iSavepoint++; /* 统计待处理的savepoint之前还有多少个savepoint */
+                        iSavepoint++;
                     }
                     if (!pSavepoint)
                     {
@@ -3152,13 +3130,13 @@ int sqlite3VdbeExec(
                         ** is committed.
                         */
                         int isTransaction = pSavepoint->pNext == 0 && db->isTransactionSavepoint;
-                        if (isTransaction && p1 == SAVEPOINT_RELEASE) /* 需要删除savepoint */
+                        if (isTransaction && p1 == SAVEPOINT_RELEASE)
                         {
                             if ((rc = sqlite3VdbeCheckFk(p, 1)) != SQLITE_OK)
                             {
                                 goto vdbe_return;
                             }
-                            db->autoCommit = 1; /* 打上自动提交标记 */
+                            db->autoCommit = 1;
                             if (sqlite3VdbeHalt(p) == SQLITE_BUSY)
                             {
                                 p->pc = pc;
@@ -3172,7 +3150,7 @@ int sqlite3VdbeExec(
                         else
                         {
                             iSavepoint = db->nSavepoint - iSavepoint - 1;
-                            if (p1 == SAVEPOINT_ROLLBACK) /* 需要进行回滚操作 */
+                            if (p1 == SAVEPOINT_ROLLBACK)
                             {
                                 for (ii = 0; ii < db->nDb; ii++)
                                 {
@@ -3181,7 +3159,6 @@ int sqlite3VdbeExec(
                             }
                             for (ii = 0; ii < db->nDb; ii++)
                             {
-                                /* 回滚savepoint */
                                 rc = sqlite3BtreeSavepoint(db->aDb[ii].pBt, p1, iSavepoint);
                                 if (rc != SQLITE_OK)
                                 {
@@ -3200,7 +3177,6 @@ int sqlite3VdbeExec(
                         ** savepoints nested inside of the savepoint being operated on. */
                         while (db->pSavepoint != pSavepoint)
                         {
-                            /* 这里其实会一直释放,直到要回滚的savepoint */
                             pTmp = db->pSavepoint;
                             db->pSavepoint = pTmp->pNext;
                             sqlite3DbFree(db, pTmp);
@@ -3243,7 +3219,6 @@ int sqlite3VdbeExec(
             ** back any currently active btree transactions. If there are any active
             ** VMs (apart from this one), then a ROLLBACK fails.  A COMMIT fails if
             ** there are active writing VMs or active VMs that use shared cache.
-            ** 给数据库打上或者去掉auto-commit标记,(取决于P1的值),P2为true的话,回滚掉所有的事务.
             **
             ** This instruction causes the VM to halt.
             */
@@ -3251,10 +3226,10 @@ int sqlite3VdbeExec(
             {
                 int desiredAutoCommit;
                 int iRollback;
-                int turnOnAC; /* 是否要打开autocommit */
+                int turnOnAC;
 
                 desiredAutoCommit = pOp->p1;
-                iRollback = pOp->p2; /* 是否要回滚 */
+                iRollback = pOp->p2;
                 turnOnAC = desiredAutoCommit && !db->autoCommit;
                 assert(desiredAutoCommit == 1 || desiredAutoCommit == 0);
                 assert(desiredAutoCommit == 1 || iRollback == 0);
@@ -3284,7 +3259,7 @@ int sqlite3VdbeExec(
                     }
                     else if (desiredAutoCommit != db->autoCommit)
                     {
-                        if (iRollback) /* 需要回滚 */
+                        if (iRollback)
                         {
                             assert(desiredAutoCommit == 1);
                             sqlite3RollbackAll(db, SQLITE_ABORT_ROLLBACK);
@@ -3854,7 +3829,6 @@ int sqlite3VdbeExec(
             **
             ** Close a cursor previously opened as P1.  If P1 is not
             ** currently open, this instruction is a no-op.
-            ** 关闭P1指向的游标.
             */
             case OP_Close:
             {
@@ -4545,7 +4519,7 @@ int sqlite3VdbeExec(
                         ** engine starts picking positive candidate ROWIDs at random until
                         ** it finds one that is not previously used. */
                         assert(pOp->p3 == 0);  /* We cannot be in random rowid mode if this is
-                 ** an AUTOINCREMENT table. */
+                     ** an AUTOINCREMENT table. */
                         /* on the first attempt, simply do one more than previous */
                         v = lastRowid;
                         v &= (MAX_ROWID >> 1); /* ensure doesn't go negative */
@@ -4635,7 +4609,6 @@ int sqlite3VdbeExec(
             case OP_Insert:
             case OP_InsertInt:
             {
-                /* pData指向需要插入的数据 */
                 Mem *pData;       /* MEM cell holding data for the record to be inserted */
                 Mem *pKey;        /* MEM cell holding key  for the record */
                 i64 iKey;         /* The integer ROWID or key for the record to be inserted */
@@ -4649,20 +4622,20 @@ int sqlite3VdbeExec(
                 pData = &aMem[pOp->p2];
                 assert(pOp->p1 >= 0 && pOp->p1 < p->nCursor);
                 assert(memIsValid(pData));
-                pC = p->apCsr[pOp->p1]; /* 获取p1指向的游标 */
+                pC = p->apCsr[pOp->p1];
                 assert(pC != 0);
                 assert(pC->pCursor != 0);
                 assert(pC->pseudoTableReg == 0);
                 assert(pC->isTable);
                 REGISTER_TRACE(pOp->p2, pData);
 
-                if (pOp->opcode == OP_Insert) /* 如果需要进行插入操作 */
+                if (pOp->opcode == OP_Insert)
                 {
                     pKey = &aMem[pOp->p3];
                     assert(pKey->flags & MEM_Int);
                     assert(memIsValid(pKey));
                     REGISTER_TRACE(pOp->p3, pKey);
-                    iKey = pKey->u.i; /* int类型的key值 */
+                    iKey = pKey->u.i;
                 }
                 else
                 {
@@ -5528,7 +5501,6 @@ int sqlite3VdbeExec(
             ** auxiliary database file if P1==1 or in an attached database if
             ** P1>1.  Write the root page number of the new table into
             ** register P2.
-            ** 创建一个索引,P1指代数据库,创建完成后,root page的页号将会写入寄存器P2
             **
             ** See documentation on OP_CreateTable for additional information.
             */
@@ -5562,8 +5534,6 @@ int sqlite3VdbeExec(
             **
             ** Read and parse all entries from the SQLITE_MASTER table of database P1
             ** that match the WHERE clause P4.
-            ** 读取以及解析SQLITE_MASTER表中满足where条件的所有entry,P1用于指示数据库
-            ** P4用于指示where条件
             **
             ** This opcode invokes the parser to create a new virtual machine,
             ** then runs the new virtual machine.  It is thus a re-entrant opcode.
@@ -5595,7 +5565,6 @@ int sqlite3VdbeExec(
                     initData.db = db;
                     initData.iDb = pOp->p1;
                     initData.pzErrMsg = &p->zErrMsg;
-                    /* sql语句 */
                     zSql = sqlite3MPrintf(db,
                                           "SELECT name, rootpage, sql FROM '%q'.%s WHERE %s ORDER BY rowid",
                                           db->aDb[iDb].zName, zMaster, pOp->p4.z);

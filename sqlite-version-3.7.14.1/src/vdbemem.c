@@ -886,6 +886,7 @@ int sqlite3VdbeMemSetStr(
 ** than pMem2. Sorting order is NULL's first, followed by numbers (integers
 ** and reals) sorted numerically, followed by text ordered by the collating
 ** sequence pColl and finally blob's ordered by memcmp().
+** 对两个内存cell中的值进行比较.
 **
 ** Two NULL values are considered equal by this function.
 */
@@ -902,6 +903,7 @@ int sqlite3MemCompare(const Mem *pMem1, const Mem *pMem2, const CollSeq *pColl)
 
     /* If one value is NULL, it is less than the other. If both values
     ** are NULL, return 0.
+    ** 如果有一个值为NULL,那么它小于另外一个,如果两个值都为NULL,返回0
     */
     if (combined_flags & MEM_Null)
     {
@@ -911,6 +913,8 @@ int sqlite3MemCompare(const Mem *pMem1, const Mem *pMem2, const CollSeq *pColl)
     /* If one value is a number and the other is not, the number is less.
     ** If both are numbers, compare as reals if one is a real, or as integers
     ** if both values are integers.
+    ** 如果一个值为number,另外一个不是,number要小
+    ** 如果都是number,如果一个为real,那么两个值都当做real来进行比较.否则按照整数来进行比较.
     */
     if (combined_flags & (MEM_Int | MEM_Real))
     {
@@ -957,6 +961,8 @@ int sqlite3MemCompare(const Mem *pMem1, const Mem *pMem2, const CollSeq *pColl)
 
     /* If one value is a string and the other is a blob, the string is less.
     ** If both are strings, compare using the collating functions.
+    ** 如果一个的值为string,另外一个值为blob, string会比较小.
+    ** 如果两个都是string,使用collating函数进行比较
     */
     if (combined_flags & MEM_Str)
     {

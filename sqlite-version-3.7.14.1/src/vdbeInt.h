@@ -15,6 +15,8 @@
 ** 6000 lines long) it was split up into several smaller files and
 ** this header information was factored out.
 */
+
+/* vdbe.c的私有头部文件 */
 #ifndef _VDBEINT_H_
 #define _VDBEINT_H_
 
@@ -22,6 +24,7 @@
 ** SQL is translated into a sequence of instructions to be
 ** executed by a virtual machine.  Each instruction is an instance
 ** of the following structure.
+** sql被转换成了一系列的指令,用于在虚拟机上运行,每一条指令是VdbeOp的一个实例
 */
 typedef struct VdbeOp Op;
 
@@ -42,9 +45,11 @@ typedef struct Explain Explain;
 ** loop over all entries of the Btree.  You can also insert new BTree
 ** entries or retrieve the key or data from the entry that the cursor
 ** is currently pointing to.
+** 游标是一个指向BTree的指针.游标可以用一个特殊的key来查找BTree中的一个entry.
 **
 ** Every cursor that the virtual machine has open is represented by an
 ** instance of the following structure.
+** 每一个被虚拟机打开的游标将会被表示为下面结构的一个实例:
 */
 struct VdbeCursor
 {
@@ -53,6 +58,7 @@ struct VdbeCursor
     KeyInfo *pKeyInfo;    /* Info about index keys needed by index cursors */
     int iDb;              /* Index of cursor database in db->aDb[] (or -1) */
     int pseudoTableReg;   /* Register holding pseudotable content. */
+    /* 头部中filed个个数 */
     int nField;           /* Number of fields in the header */
     Bool zeroed;          /* True if zeroed out and ready for reuse */
     Bool rowidIsValid;    /* True if lastRowid is valid */
@@ -100,6 +106,8 @@ typedef struct VdbeCursor VdbeCursor;
 ** these values are copied back to the Vdbe from the VdbeFrame structure,
 ** restoring the state of the VM to as it was before the sub-program
 ** began executing.
+** 当一个子程序执行的时候,下面结构体的一个实例被分配,记录当前程序的计数器,以及当前内存cell数据等各种值.
+** 当子程序执行完毕,这些值将拷贝回vdbe结构体,从vdbeFrame结构体中,用于恢复VM的状态
 **
 ** The memory for a VdbeFrame object is allocated and managed by a memory
 ** cell in the parent (calling) frame. When the memory cell is deleted or
@@ -109,6 +117,8 @@ typedef struct VdbeCursor VdbeCursor;
 ** this instead of deleting the VdbeFrame immediately is to avoid recursive
 ** calls to sqlite3VdbeMemRelease() when the memory cells belonging to the
 ** child frame are released.
+** VdbeFrame的memeory被分配以及组织成一个memory cell.当memory cell被删除或者覆写,VdbeFrame结构
+** 不会立刻被释放.它会被放入Vdbe.pDelFrame链表,Vdbe.pDelFrame中的数据在VM被重置(VdbeHalt)的时候,被删除.
 **
 ** The currently executing frame is stored in Vdbe.pFrame. Vdbe.pFrame is
 ** set to NULL if the currently executing frame is the main program.
@@ -145,6 +155,7 @@ struct VdbeFrame
 ** Internally, the vdbe manipulates nearly all SQL values as Mem
 ** structures. Each Mem struct may cache multiple representations (string,
 ** integer etc.) of the same value.
+** 在内部,vdbe将所有的SQL值当做Mem结构体,每一个Mem结构体可以保存各种类型的值.
 */
 struct Mem
 {
@@ -271,6 +282,7 @@ struct sqlite3_context
 /*
 ** An Explain object accumulates indented output which is helpful
 ** in describing recursive data structures.
+** 一个Explain结构累计缩进输出,这对描述递归结构很有帮助
 */
 struct Explain
 {
@@ -284,9 +296,11 @@ struct Explain
 /*
 ** An instance of the virtual machine.  This structure contains the complete
 ** state of the virtual machine.
+** 虚拟机的一个实例,这个结构包含了完整的虚拟机状态.
 **
 ** The "sqlite3_stmt" structure pointer that is returned by sqlite3_prepare()
 ** is really a pointer to an instance of this structure.
+** sqlite3_stmt结构指向sqlite3_prepare()函数返回的指针,实际指向的就是这样一个结构体
 **
 ** The Vdbe.inVtabMethod variable is set to non-zero for the duration of
 ** any virtual table method invocations made by the vdbe program. It is
@@ -351,6 +365,7 @@ struct Vdbe
     Explain *pExplain;      /* The explainer */
     char *zExplain;         /* Explanation of data structures */
 #endif
+    /* 上层函数的栈帧 */
     VdbeFrame *pFrame;      /* Parent frame */
     VdbeFrame *pDelFrame;   /* List of frame objects to free on VM reset */
     int nFrame;             /* Number of frames in pFrame list */

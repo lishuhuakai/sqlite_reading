@@ -866,6 +866,7 @@ void sqlite3VXPrintf(
 
 /*
 ** Append N bytes of text from z to the StrAccum object.
+** 添加N个字节的text,从z到StrAccum实例中
 */
 void sqlite3StrAccumAppend(StrAccum *p, const char *z, int N)
 {

@@ -304,18 +304,24 @@ static int querySharedCacheTableLock(Btree *p, Pgno iTab, u8 eLock)
 ** Add a lock on the table with root-page iTable to the shared-btree used
 ** by Btree handle p. Parameter eLock must be either READ_LOCK or
 ** WRITE_LOCK.
+** 在表上加锁.
 **
 ** This function assumes the following:
 **
 **   (a) The specified Btree object p is connected to a sharable
 **       database (one with the BtShared.sharable flag set), and
+**   (a) Btree实例p连接到了一个共享的数据库
 **
 **   (b) No other Btree objects hold a lock that conflicts
 **       with the requested lock (i.e. querySharedCacheTableLock() has
 **       already been called and returned SQLITE_OK).
+**   (b) 并没有其他Btree实例拥有这一把和请求锁冲突的锁.
 **
 ** SQLITE_OK is returned if the lock is added successfully. SQLITE_NOMEM
 ** is returned if a malloc attempt fails.
+** 如果加锁成功,返回SQLITE_OK
+** @param iTable 表的root page的页号
+** @param elock 锁的类型
 */
 static int setSharedCacheTableLock(Btree *p, Pgno iTable, u8 eLock)
 {
@@ -339,6 +345,7 @@ static int setSharedCacheTableLock(Btree *p, Pgno iTable, u8 eLock)
     assert(SQLITE_OK == querySharedCacheTableLock(p, iTable, eLock));
 
     /* First search the list for an existing lock on this table. */
+    /* 首先检查是否已经存在锁 */
     for (pIter = pBt->pLock; pIter; pIter = pIter->pNext)
     {
         if (pIter->iTable == iTable && pIter->pBtree == p)
@@ -350,6 +357,7 @@ static int setSharedCacheTableLock(Btree *p, Pgno iTable, u8 eLock)
 
     /* If the above search did not find a BtLock struct associating Btree p
     ** with table iTable, allocate one and link it into the list.
+    ** 如果上面的查找没有找到锁,分配一个锁,然后加入链表
     */
     if (!pLock)
     {
@@ -3715,10 +3723,12 @@ static int countWriteCursors(BtShared *pBt)
 ** This routine sets the state to CURSOR_FAULT and the error
 ** code to errCode for every cursor on BtShared that pBtree
 ** references.
+** 此函数将pBtree相关的游标状态设置为CURSOR_FAULT.
 **
 ** Every cursor is tripped, including cursors that belong
 ** to other database connections that happen to be sharing
 ** the cache with pBtree.
+**
 **
 ** This routine gets called when a rollback occurs.
 ** All cursors using the same cache must be tripped
@@ -3727,6 +3737,9 @@ static int countWriteCursors(BtShared *pBt)
 ** or moved root pages, so it is not sufficient to
 ** save the state of the cursor.  The cursor must be
 ** invalidated.
+** 当回滚触发的时候,会调用此函数,所有使用相同cache的游标都要被tripped
+** 以避免它们尝试去访问btree,在回滚之后.回滚可能会导致表的删除,或者root page的移动.
+** 所以,不足以保存游标的状态,必须要使得游标失效.
 */
 void sqlite3BtreeTripAllCursors(Btree *pBtree, int errCode)
 {
@@ -3855,17 +3868,20 @@ int sqlite3BtreeBeginStmt(Btree *p, int iStatement)
 ** or SAVEPOINT_RELEASE. This function either releases or rolls back the
 ** savepoint identified by parameter iSavepoint, depending on the value
 ** of op.
+** 第二个参数只能是SAVEPOINT_ROLLBACK或者SAVEPOINT_RELEASE,这个函数要么释放,要么回滚savepoint(通过iSavepoint定位)
 **
 ** Normally, iSavepoint is greater than or equal to zero. However, if op is
 ** SAVEPOINT_ROLLBACK, then iSavepoint may also be -1. In this case the
 ** contents of the entire transaction are rolled back. This is different
 ** from a normal transaction rollback, as no locks are released and the
 ** transaction remains open.
+** 通常情况下,iSavepoint大于等于0,但是,如果op为SAVEPOINT_ROLLBACK,iSavepoint的值可能为-1
+** 这种情况下,整个事务都要回滚.
 */
 int sqlite3BtreeSavepoint(Btree *p, int op, int iSavepoint)
 {
     int rc = SQLITE_OK;
-    if (p && p->inTrans == TRANS_WRITE)
+    if (p && p->inTrans == TRANS_WRITE) /* 处于写事务之中 */
     {
         BtShared *pBt = p->pBt;
         assert(op == SAVEPOINT_RELEASE || op == SAVEPOINT_ROLLBACK);
@@ -4027,6 +4043,7 @@ void sqlite3BtreeCursorZero(BtCursor *p)
 ** Set the cached rowid value of every cursor in the same database file
 ** as pCur and having the same root page number as pCur.  The value is
 ** set to iRowid.
+** 遍历当前数据库文件打开的每一个游标,设置rowid的值
 **
 ** Only positive rowid values are considered valid for this cache.
 ** The cache is initialized to zero, indicating an invalid cache.
@@ -9526,6 +9543,7 @@ int sqlite3BtreeSchemaLocked(Btree *p)
 ** Obtain a lock on the table whose root page is iTab.  The
 ** lock is a write lock if isWritelock is true or a read lock
 ** if it is false.
+** 在表上获取一把锁,如果表的root page为iTab
 */
 int sqlite3BtreeLockTable(Btree *p, int iTab, u8 isWriteLock)
 {

@@ -10,6 +10,8 @@
 2. ACID的是如何实现的,是我们要关注的核心之一,也就是Pager模块是重点.
 
    ![](https://github.com/lishuhuakai/sqlite_reading/blob/main/Document/official_documents/imgs/image-20210828173741457.png)
+   
+3. VDBE模块也是一个重点,主要只要关注增删改的优化.
 
 
 # 读码建议
@@ -30,8 +32,17 @@
 
 # 读码日志
 
-# 0907
+## 0907
 
 btree模块接近尾声,读这个模块,最主要的是要熟悉数据库的格式,以及B+树算法,sqlite的实现其实比较绕.还好,没有被卡住,接下来是vdbe模块了.速度还行,感觉每周都能过一个模块,可能到国庆,就能大致读完sqlite,这个比我想象的要快很多.
 
 btree以及更下层的pager模块,更多的是做了一层抽象.为上层提供可靠的服务.
+
+## 0912
+
+读码计划比想象的要快得多,vdbe模块估计是我要了解的最后一个模块了,大家其实可以忽略掉前端,因为前端的知识都是死的.按照套路来就行了.没有啥技巧.
+
+现在已经进行到了vdbe模块,这个模块只要认真熟悉字节码即可,理解这个模块,比较快捷的方式,是explain命令,将常用的命令都explain一遍,跟着字节码追踪一遍,就能理解个七七八八.
+
+![](https://github.com/lishuhuakai/sqlite_reading/blob/main/Document/official_documents/imgs/explain1.png)
+

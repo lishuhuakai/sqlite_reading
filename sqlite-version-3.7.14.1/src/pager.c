@@ -1322,6 +1322,9 @@ static int readMasterJournal(sqlite3_file *pJrnl, char *zMaster, u32 nMaster)
 ** Return the offset of the sector boundary at or immediately
 ** following the value in pPager->journalOff, assuming a sector
 ** size of pPager->sectorSize bytes.
+** 返回sector的边界(sector大小的倍数),也就是Pager.journal所在的位置(恰好在边界上),
+** 或者在其之后,与其最接近的边界的位置.
+** 下面是一个简单的例子
 **
 ** i.e for a sector size of 512:
 **
@@ -1543,17 +1546,21 @@ static int writeJournalHdr(Pager *pPager)
 ** file. The current location in the journal file is given by
 ** pPager->journalOff. See comments above function writeJournalHdr() for
 ** a description of the journal header format.
+** 此函数被调用之前,要保证日志文件是打开的.从日志文件的当前位置,读出一个日志头部(JOURNAL_HDR_SZ字节)
+** 当前位置由pPager->journalOff指定.可以查看writeJournalHdr()函数了解头部的定义.
 **
 ** If the header is read successfully, *pNRec is set to the number of
 ** page records following this header and *pDbSize is set to the size of the
 ** database before the transaction began, in pages. Also, pPager->cksumInit
 ** is set to the value read from the journal header. SQLITE_OK is returned
 ** in this case.
+** 成功读取出头部之后,*pNRec被设置为page records的数目, *pDBSize被赋值为事务开始之前,数据库的大小(单位page).
+** pPager->cksumInit被设置为从日志头部中读取到的值.
 **
 ** If the journal header file appears to be corrupted, SQLITE_DONE is
 ** returned and *pNRec and *PDbSize are undefined.  If JOURNAL_HDR_SZ bytes
 ** cannot be read from the journal file an error code is returned.
-** 读取日志文件
+**
 */
 static int readJournalHdr(
     Pager *pPager,               /* Pager object */
@@ -1572,6 +1579,8 @@ static int readJournalHdr(
     /* Advance Pager.journalOff to the start of the next sector. If the
     ** journal file is too small for there to be a header stored at this
     ** point, return SQLITE_DONE.
+    ** 将Pager.journalOff移动到下一个sector的开始位置,如果日志文件太小,以至于只有一个头部
+    ** 返回SQLITE_DONE
     */
     pPager->journalOff = journalHdrOffset(pPager);
     if (pPager->journalOff + JOURNAL_HDR_SZ(pPager) > journalSize)
@@ -1584,6 +1593,7 @@ static int readJournalHdr(
     ** the  magic string found at the start of each journal header, return
     ** SQLITE_DONE. If an IO error occurs, return an error code. Otherwise,
     ** proceed.
+    ** 头8个字节为魔术值
     */
     if (isHot || iHdrOff != pPager->journalHdr)
     {
@@ -1601,10 +1611,11 @@ static int readJournalHdr(
     /* Read the first three 32-bit fields of the journal header: The nRec
     ** field, the checksum-initializer and the database size at the start
     ** of the transaction. Return an error code if anything goes wrong.
+    ** 读取4个字节,page count,也就是日志中记录的条数
     */
     if (SQLITE_OK != (rc = read32bits(pPager->jfd, iHdrOff + 8, pNRec)) /* 记录个数 */
         || SQLITE_OK != (rc = read32bits(pPager->jfd, iHdrOff + 12, &pPager->cksumInit))
-        || SQLITE_OK != (rc = read32bits(pPager->jfd, iHdrOff + 16, pDbSize))
+        || SQLITE_OK != (rc = read32bits(pPager->jfd, iHdrOff + 16, pDbSize)) /* 原本数据库的大小 */
        )
     {
         return rc;
@@ -3461,28 +3472,37 @@ static int pagerOpenWalIfPresent(Pager *pPager)
 ** the entire master journal file. The case pSavepoint==NULL occurs when
 ** a ROLLBACK TO command is invoked on a SAVEPOINT that is a transaction
 ** savepoint.
+** 回滚savepoint, 如果pSavepoint == NULL,那么回滚整个master日志文件.
 **
 ** When pSavepoint is not NULL (meaning a non-transaction savepoint is
 ** being rolled back), then the rollback consists of up to three stages,
 ** performed in the order specified:
+** 如果pSavepoint不为NULL(意味着非事务savepoint被回滚),整个回滚包含三个阶段:
 **
 **   * Pages are played back from the main journal starting at byte
 **     offset PagerSavepoint.iOffset and continuing to
 **     PagerSavepoint.iHdrOffset, or to the end of the main journal
 **     file if PagerSavepoint.iHdrOffset is zero.
+**   * 从主日志offset处开始的位置开始回滚,一直到PagerSavepoint.iHdrOffset,或者直到主日志的末尾,如果
+**     PagerSavepoint.iHdrOffset为0的话.
 **
 **   * If PagerSavepoint.iHdrOffset is not zero, then pages are played
 **     back starting from the journal header immediately following
 **     PagerSavepoint.iHdrOffset to the end of the main journal file.
+**   * 如果PagerSavepoint.iHdrOffset不为0, 那么从日志头部后的PagerSavepoint.iHdrOffset
+**     到主日志文件的末尾,开始回滚.
 **
 **   * Pages are then played back from the sub-journal file, starting
 **     with the PagerSavepoint.iSubRec and continuing to the end of
 **     the journal file.
+**   * 日志从sub日志文件中开始回滚,从PagerSavepoint.iSubRec直到日志文件末尾.
 **
 ** Throughout the rollback process, each time a page is rolled back, the
 ** corresponding bit is set in a bitvec structure (variable pDone in the
 ** implementation below). This is used to ensure that a page is only
 ** rolled back the first time it is encountered in either journal.
+** 整个回滚过程,每回滚一页,就设置bitVect结构体的对应比特位(变量pDone),这是为了保证,一页
+** 只在第一次遇见的时候回滚,避免多次回滚.
 **
 ** If pSavepoint is NULL, then pages are only played back from the main
 ** journal file. There is no need for a bitvec in this case.
@@ -3494,6 +3514,7 @@ static int pagerOpenWalIfPresent(Pager *pPager)
 */
 static int pagerPlaybackSavepoint(Pager *pPager, PagerSavepoint *pSavepoint)
 {
+    /* 主日志的有效大小 */
     i64 szJ;                 /* Effective size of the main journal */
     i64 iHdrOff;             /* End of first segment of main-journal records */
     int rc = SQLITE_OK;      /* Return code */
@@ -3505,7 +3526,7 @@ static int pagerPlaybackSavepoint(Pager *pPager, PagerSavepoint *pSavepoint)
     /* Allocate a bitvec to use to store the set of pages rolled back */
     if (pSavepoint)
     {
-        pDone = sqlite3BitvecCreate(pSavepoint->nOrig);
+        pDone = sqlite3BitvecCreate(pSavepoint->nOrig); /* 创建一个位图结构 */
         if (!pDone)
         {
             return SQLITE_NOMEM;
@@ -3514,6 +3535,7 @@ static int pagerPlaybackSavepoint(Pager *pPager, PagerSavepoint *pSavepoint)
 
     /* Set the database size back to the value it was before the savepoint
     ** being reverted was opened.
+    ** 将数据库的大小设置成savepoint之前的大小
     */
     pPager->dbSize = pSavepoint ? pSavepoint->nOrig : pPager->dbOrigSize;
     pPager->changeCountDone = pPager->tempFile;
@@ -3527,6 +3549,7 @@ static int pagerPlaybackSavepoint(Pager *pPager, PagerSavepoint *pSavepoint)
     ** journal.  The actual file might be larger than this in
     ** PAGER_JOURNALMODE_TRUNCATE or PAGER_JOURNALMODE_PERSIST.  But anything
     ** past pPager->journalOff is off-limits to us.
+    ** 将pPager->journalOff作为主回滚日志的有效大小. 不允许越过pPager->journalOff.
     */
     szJ = pPager->journalOff;
     assert(pagerUseWal(pPager) == 0 || szJ == 0);
@@ -3537,6 +3560,8 @@ static int pagerPlaybackSavepoint(Pager *pPager, PagerSavepoint *pSavepoint)
     ** greater than the current database size (pPager->dbSize) but those
     ** will be skipped automatically.  Pages are added to pDone as they
     ** are played back.
+    ** 从main日志PagerSavepoint.iOffset开始的地方,一直到下一条日志的头部,回滚记录.
+    ** 有可能主日志中存在一个页号,大于当前数据库大小,这个会自动跳过.
     */
     if (pSavepoint && !pagerUseWal(pPager))
     {
@@ -3544,25 +3569,32 @@ static int pagerPlaybackSavepoint(Pager *pPager, PagerSavepoint *pSavepoint)
         pPager->journalOff = pSavepoint->iOffset;
         while (rc == SQLITE_OK && pPager->journalOff < iHdrOff)
         {
+            /* 回滚一页 */
             rc = pager_playback_one_page(pPager, &pPager->journalOff, pDone, 1, 1);
         }
         assert(rc != SQLITE_DONE);
     }
     else
     {
-        pPager->journalOff = 0;
+        pPager->journalOff = 0; /* 全部回滚掉,偏移为0 */
     }
 
     /* Continue rolling back records out of the main journal starting at
     ** the first journal header seen and continuing until the effective end
     ** of the main journal file.  Continue to skip out-of-range pages and
     ** continue adding pages rolled back to pDone.
+    ** 继续从主日志回滚记录,从看到的第一个日志的头部,知道主日志文件的有效结尾.忽略那些越界的page
+    ** 这里稍微说明一下:
+    **    日志文件中包含很多条日志,越在前面的日志越老.savepoint其实只是指示了一条日志,如果要回滚的话,
+    **    其实要回滚从指示日志开始,一直到日志文件末尾的所有日志.也就是从指示日志之后(包括指示日志)所做的
+    **    任何操作都丢弃掉.
     */
     while (rc == SQLITE_OK && pPager->journalOff < szJ)
     {
         u32 ii;            /* Loop counter */
         u32 nJRec = 0;     /* Number of Journal Records */
         u32 dummy;
+        /* nJRec 日志记录数 */
         rc = readJournalHdr(pPager, 0, szJ, &nJRec, &dummy);
         assert(rc != SQLITE_DONE);
 
@@ -3579,6 +3611,7 @@ static int pagerPlaybackSavepoint(Pager *pPager, PagerSavepoint *pSavepoint)
         }
         for (ii = 0; rc == SQLITE_OK && ii < nJRec && pPager->journalOff < szJ; ii++)
         {
+            /* 每一条记录都回滚一次 */
             rc = pager_playback_one_page(pPager, &pPager->journalOff, pDone, 1, 1);
         }
         assert(rc != SQLITE_DONE);
@@ -3588,6 +3621,7 @@ static int pagerPlaybackSavepoint(Pager *pPager, PagerSavepoint *pSavepoint)
     /* Finally,  rollback pages from the sub-journal.  Page that were
     ** previously rolled back out of the main journal (and are hence in pDone)
     ** will be skipped.  Out-of-range pages are also skipped.
+    ** 最后,从sub日志中回滚page,超过范围的页会被忽略,已经从主日志中回滚了页也会忽略.
     */
     if (pSavepoint)
     {
@@ -6910,6 +6944,7 @@ int sqlite3PagerOpenSavepoint(Pager *pPager, int nSavepoint)
 ** or an IO error code if an IO error occurs while rolling back a
 ** savepoint. If no errors occur, SQLITE_OK is returned.
 ** 回滚或者释放一个savepoint
+** @param iSavepoint pPager->aSavepoint数组的下标,用于指示savepoint
 */
 int sqlite3PagerSavepoint(Pager *pPager, int op, int iSavepoint)
 {
@@ -6921,13 +6956,18 @@ int sqlite3PagerSavepoint(Pager *pPager, int op, int iSavepoint)
     if (rc == SQLITE_OK && iSavepoint < pPager->nSavepoint)
     {
         int ii;            /* Iterator variable */
+        /* 在此次操作之后,还剩下多少savepoint
+         *  head -> elem0 -> elem1 -> elem2 -> ... -> elemn
+         *  越接近头部的savepoint越新
+         */
         int nNew;          /* Number of remaining savepoints after this op. */
 
         /* Figure out how many savepoints will still be active after this
         ** operation. Store this value in nNew. Then free resources associated
         ** with any savepoints that are destroyed by this operation.
+        ** 计算一下,有多少savepoint仍然处于active状态,在这次操作之后,
         */
-        nNew = iSavepoint + ((op == SAVEPOINT_RELEASE) ? 0 : 1);
+        nNew = iSave point + ((op == SAVEPOINT_RELEASE) ? 0 : 1);
         for (ii = nNew; ii < pPager->nSavepoint; ii++)
         {
             sqlite3BitvecDestroy(pPager->aSavepoint[ii].pInSavepoint);
@@ -6935,10 +6975,12 @@ int sqlite3PagerSavepoint(Pager *pPager, int op, int iSavepoint)
         pPager->nSavepoint = nNew;
 
         /* If this is a release of the outermost savepoint, truncate
-        ** the sub-journal to zero bytes in size. */
+        ** the sub-journal to zero bytes in size.
+        ** 如果要释放最外边的savepoint,直接将sub-journal置空
+        */
         if (op == SAVEPOINT_RELEASE) /* 释放savepoint */
         {
-            if (nNew == 0 && isOpen(pPager->sjfd))
+            if (nNew == 0 && isOpen(pPager->sjfd)) /* 所有savepoint都删掉 */
             {
                 /* Only truncate if it is an in-memory sub-journal. */
                 if (sqlite3IsMemJournal(pPager->sjfd))
@@ -6953,6 +6995,8 @@ int sqlite3PagerSavepoint(Pager *pPager, int op, int iSavepoint)
         ** If this is a temp-file, it is possible that the journal file has
         ** not yet been opened. In this case there have been no changes to
         ** the database file, so the playback operation can be skipped.
+        ** 否则的话,这是一个回滚操作,回滚指定的savepoint,如果这是一个临时文件,有可能日志文件还没有打开.
+        ** 这种情况下,无需做任何操作.
         */
         else if (pagerUseWal(pPager) || isOpen(pPager->jfd))
         {

@@ -44,12 +44,17 @@ static void corruptSchema(
 ** This is the callback routine for the code that initializes the
 ** database.  See sqlite3Init() below for additional information.
 ** This routine is also called from the OP_ParseSchema opcode of the VDBE.
+** 这是初始化数据库的回调函数
 **
 ** Each callback contains the following information:
 **
 **     argv[0] = name of thing being created
 **     argv[1] = root page number for table or index. 0 for trigger or view.
 **     argv[2] = SQL text for the CREATE statement.
+** 每次回调包含下面的信息:
+**     argv[0] = 表名
+**     argv[1] = 表或者索引的root page
+**     argv[2] = 创建表或者索引的sql语句
 **
 */
 int sqlite3InitCallback(void *pInit, int argc, char **argv, char **NotUsed)
@@ -87,7 +92,7 @@ int sqlite3InitCallback(void *pInit, int argc, char **argv, char **NotUsed)
 
         assert(db->init.busy);
         db->init.iDb = iDb;
-        db->init.newTnum = sqlite3Atoi(argv[1]);
+        db->init.newTnum = sqlite3Atoi(argv[1]); /* root page */
         db->init.orphanTrigger = 0;
         TESTONLY(rcp =) sqlite3_prepare(db, argv[2], -1, &pStmt, 0);
         rc = db->errCode;
@@ -152,6 +157,8 @@ int sqlite3InitCallback(void *pInit, int argc, char **argv, char **NotUsed)
 ** database.  iDb==1 should never be used.  iDb>=2 is used for
 ** auxiliary databases.  Return one of the SQLITE_ error codes to
 ** indicate success or failure.
+** 尝试读取数据库的schema,并且初始化内部结构,数据库文件的索引通过iDb来指定.
+** iDb==0代表主数据库,iDb==1不可能出现,iDb>=2,表示额外的数据库文件.
 */
 static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg)
 {
@@ -212,7 +219,9 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg)
     }
     zMasterName = SCHEMA_TABLE(iDb);
 
-    /* Construct the schema tables.  */
+    /* Construct the schema tables.
+    ** 构建元表
+    */
     azArg[0] = zMasterName;
     azArg[1] = "1";
     azArg[2] = zMasterSchema;
@@ -234,6 +243,7 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg)
     }
 
     /* Create a cursor to hold the database open
+    ** 创建一个游标
     */
     pDb = &db->aDb[iDb];
     if (pDb->pBt == 0)
@@ -261,6 +271,7 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg)
     }
 
     /* Get the database meta information.
+    ** 获取数据库的元数据
     **
     ** Meta values are as follows:
     **    meta[0]   Schema cookie.  Changes with each schema change.
@@ -273,6 +284,10 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg)
     **    meta[7]   unused
     **    meta[8]   unused
     **    meta[9]   unused
+    ** --------------------------------
+    **    meta[0]   Schema cookie. 每次schema发生变化时,这个值就会变化
+    **    meta[1]   schema层的文件格式
+    **    meta[2]   页缓存的大小
     **
     ** Note: The #defined SQLITE_UTF* symbols in sqliteInt.h correspond to
     ** the possible values of meta[4].
@@ -360,6 +375,7 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg)
     }
 
     /* Read the schema information out of the schema tables
+    ** 读取表信息
     */
     assert(db->init.busy);
     {
@@ -373,6 +389,7 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg)
             xAuth = db->xAuth;
             db->xAuth = 0;
 #endif
+            /* 执行对应的sql语句 */
             rc = sqlite3_exec(db, zSql, sqlite3InitCallback, &initData, 0);
 #ifndef SQLITE_OMIT_AUTHORIZATION
             db->xAuth = xAuth;
@@ -430,10 +447,12 @@ error_out:
 ** used to store temporary tables, and any additional database files
 ** created using ATTACH statements.  Return a success code.  If an
 ** error occurs, write an error message into *pzErrMsg.
+** 初始化所有的数据库文件 - 主数据库文件,包含临时表的文件,以及其他附加的数据库文件.
 **
 ** After a database is initialized, the DB_SchemaLoaded bit is set
 ** bit is set in the flags field of the Db structure. If the database
 ** file was of zero-length, then the DB_Empty flag is also set.
+** 在数据库初始化完成之后,DB_SchemaLoaded标记被标记上.如果数据库文件长度为0,那么DB_Empty标志也被置上.
 */
 int sqlite3Init(sqlite3 *db, char **pzErrMsg)
 {

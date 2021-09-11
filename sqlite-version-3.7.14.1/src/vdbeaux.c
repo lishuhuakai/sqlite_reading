@@ -31,6 +31,7 @@ int sqlite3VdbeAddopTrace = 0;
 
 /*
 ** Create a new virtual database engine.
+** 创建VDBE结构体
 */
 Vdbe *sqlite3VdbeCreate(sqlite3 *db)
 {
@@ -42,7 +43,7 @@ Vdbe *sqlite3VdbeCreate(sqlite3 *db)
     {
         db->pVdbe->pPrev = p;
     }
-    p->pNext = db->pVdbe;
+    p->pNext = db->pVdbe; /* 一个db可能关联很多个vdbe结构体 */
     p->pPrev = 0;
     db->pVdbe = p;
     p->magic = VDBE_MAGIC_INIT;
@@ -51,6 +52,7 @@ Vdbe *sqlite3VdbeCreate(sqlite3 *db)
 
 /*
 ** Remember the SQL string for a prepared statement.
+**  记住sql语句
 */
 void sqlite3VdbeSetSql(Vdbe *p, const char *z, int n, int isPrepareV2)
 {
@@ -60,12 +62,13 @@ void sqlite3VdbeSetSql(Vdbe *p, const char *z, int n, int isPrepareV2)
     if (!isPrepareV2) return;
 #endif
     assert(p->zSql == 0);
-    p->zSql = sqlite3DbStrNDup(p->db, z, n);
+    p->zSql = sqlite3DbStrNDup(p->db, z, n); /* 拷贝sql语句 */
     p->isPrepareV2 = (u8)isPrepareV2;
 }
 
 /*
 ** Return the SQL associated with a prepared statement
+** 返回statement对应的sql语句
 */
 const char *sqlite3_sql(sqlite3_stmt *pStmt)
 {
@@ -75,6 +78,7 @@ const char *sqlite3_sql(sqlite3_stmt *pStmt)
 
 /*
 ** Swap all content between two VDBE structures.
+** 交换两个VDBE结构体的内容
 */
 void sqlite3VdbeSwap(Vdbe *pA, Vdbe *pB)
 {
@@ -108,6 +112,7 @@ void sqlite3VdbeTrace(Vdbe *p, FILE *trace)
 /*
 ** Resize the Vdbe.aOp array so that it is at least one op larger than
 ** it was.
+** 扩展Vdbe.aOp数组 字节码数组
 **
 ** If an out-of-memory error occurs while resizing the array, return
 ** SQLITE_NOMEM. In this case Vdbe.aOp and Vdbe.nOpAlloc remain
@@ -130,6 +135,7 @@ static int growOpArray(Vdbe *p)
 /*
 ** Add a new instruction to the list of instructions current in the
 ** VDBE.  Return the address of the new instruction.
+** 添加新指令到当前的VDBE之中,返回新指令的下标
 **
 ** Parameters:
 **
@@ -193,6 +199,7 @@ int sqlite3VdbeAddOp2(Vdbe *p, int op, int p1, int p2)
 
 /*
 ** Add an opcode that includes the p4 value as a pointer.
+** 添加新的指令,到vdbe指令数组中
 */
 int sqlite3VdbeAddOp4(
     Vdbe *p,            /* Add the opcode to this VM */
@@ -227,6 +234,7 @@ void sqlite3VdbeAddParseSchemaOp(Vdbe *p, int iDb, char *zWhere)
 
 /*
 ** Add an opcode that includes the p4 value as an integer.
+** p4的值是一个int
 */
 int sqlite3VdbeAddOp4Int(
     Vdbe *p,            /* Add the opcode to this VM */
@@ -1519,6 +1527,7 @@ int sqlite3VdbeList(
 #ifdef SQLITE_DEBUG
 /*
 ** Print the SQL that was used to generate a VDBE program.
+** 打印sql语句
 */
 void sqlite3VdbePrintSql(Vdbe *p)
 {
@@ -1831,6 +1840,7 @@ void sqlite3VdbeFreeCursor(Vdbe *p, VdbeCursor *pCx)
 ** Copy the values stored in the VdbeFrame structure to its Vdbe. This
 ** is used, for example, when a trigger sub-program is halted to restore
 ** control to the main program.
+** 拷贝存储在VdbeFrame结构中的值到Vdbe中
 */
 int sqlite3VdbeFrameRestore(VdbeFrame *pFrame)
 {
@@ -2389,14 +2399,18 @@ int sqlite3VdbeCheckFk(Vdbe *p, int deferred)
 ** This routine is called the when a VDBE tries to halt.  If the VDBE
 ** has made changes and is in autocommit mode, then commit those
 ** changes.  If a rollback is needed, then do the rollback.
+** 当一个VDBE尝试halt的时候,会调用此函数,如果VDBE造成了更改,并且处于autocommit模式
+** 那么提交这些更改,如果需要回滚,那么就回滚.
 **
 ** This routine is the only way to move the state of a VM from
 ** SQLITE_MAGIC_RUN to SQLITE_MAGIC_HALT.  It is harmless to
 ** call this on a VM that is in the SQLITE_MAGIC_HALT state.
+** 本函数可以使得VM的状态由SQLITE_MAGIC_RUN -> SQLITE_MAGIC_HALT
 **
 ** Return an error code.  If the commit could not complete because of
 ** lock contention, return SQLITE_BUSY.  If SQLITE_BUSY is returned, it
 ** means the close did not happen and needs to be repeated.
+** 返回错误码,如果由于内容被锁住无法提交完成,返回SQLITE_BUSY.
 */
 int sqlite3VdbeHalt(Vdbe *p)
 {
@@ -2452,6 +2466,8 @@ int sqlite3VdbeHalt(Vdbe *p)
             ** no rollback is necessary. Otherwise, at least a savepoint
             ** transaction must be rolled back to restore the database to a
             ** consistent state.
+            ** 如果查询是只读的,而且错误码是SQLITE_INTERRUPT,不需要回滚,否则,我们要回滚到至少一个savepoint
+            ** 为了维持一致性.
             **
             ** Even if the statement is read-only, it is important to perform
             ** a statement or transaction rollback operation. If the error
@@ -2632,6 +2648,8 @@ int sqlite3VdbeHalt(Vdbe *p)
 /*
 ** Each VDBE holds the result of the most recent sqlite3_step() call
 ** in p->rc.  This routine sets that result back to SQLITE_OK.
+** 每一个VDBE都会保持最近的sqlite3_step(执行sql语句,得到返回结果的一行)函数得到的p->pc
+** 此函数,将结果重置为SQLITE_OK
 */
 void sqlite3VdbeResetStepResult(Vdbe *p)
 {
@@ -3299,6 +3317,7 @@ UnpackedRecord *sqlite3VdbeAllocUnpackedRecord(
 ** Given the nKey-byte encoding of a record in pKey[], populate the
 ** UnpackedRecord structure indicated by the fourth argument with the
 ** contents of the decoded record.
+** 给定nKey长度的record(pKey),将其安装到UnpackedRecord结构体中
 */
 void sqlite3VdbeRecordUnpack(
     KeyInfo *pKeyInfo,     /* Information about the record format */
@@ -3316,14 +3335,14 @@ void sqlite3VdbeRecordUnpack(
 
     p->flags = 0;
     assert(EIGHT_BYTE_ALIGNMENT(pMem));
-    idx = getVarint32(aKey, szHdr);
+    idx = getVarint32(aKey, szHdr); /* 头部大小 */
     d = szHdr;
     u = 0;
     while (idx < szHdr && u < p->nField && d <= nKey)
     {
         u32 serial_type;
 
-        idx += getVarint32(&aKey[idx], serial_type);
+        idx += getVarint32(&aKey[idx], serial_type); /* 获取类型 */
         pMem->enc = pKeyInfo->enc;
         pMem->db = pKeyInfo->db;
         /* pMem->flags = 0; // sqlite3VdbeSerialGet() will set this for us */
@@ -3344,6 +3363,9 @@ void sqlite3VdbeRecordUnpack(
 ** created by th OP_MakeRecord opcode of the VDBE.  The pPKey2
 ** key must be a parsed key such as obtained from
 ** sqlite3VdbeParseRecord.
+** 这个函数比较两个key, 如果小于,返回负数,等于返回0,否则返回整数.
+** {nKey1, pKey1}必须要是一个blob(通过Op_MakeRecord指令创建), pPkey2必须要是一个经过
+** 解析过的key,比如说通过sqlite3VdbeParseRecord获得.
 **
 ** Key1 and Key2 do not have to contain the same number of fields.
 ** The key with fewer fields is usually compares less than the
@@ -3352,6 +3374,8 @@ void sqlite3VdbeRecordUnpack(
 ** Or if the UNPACKED_MATCH_PREFIX flag is set and the prefixes are
 ** equal, then the keys are considered to be equal and
 ** the parts beyond the common prefix are ignored.
+** Key1以及Key2并不一定要包含相同数量的字段.有比较少字段的key往往小于有较长字段的key.
+** 如果pPkey2上被设置了UNPACKED_MATCH_PREFIX标记,并且前缀(prefix)相等.
 */
 int sqlite3VdbeRecordCompare(
     int nKey1, const void *pKey1, /* Left key */
@@ -3396,9 +3420,10 @@ int sqlite3VdbeRecordCompare(
 
         /* Extract the values to be compared.
         */
-        d1 += sqlite3VdbeSerialGet(&aKey1[d1], serial_type1, &mem1);
+        d1 += sqlite3VdbeSerialGet(&aKey1[d1], serial_type1, &mem1); /* 读取出值 */
 
         /* Do the comparison
+        ** 进行比较
         */
         rc = sqlite3MemCompare(&mem1, &pPKey2->aMem[i],
                                i < nField ? pKeyInfo->aColl[i] : 0);
@@ -3406,7 +3431,9 @@ int sqlite3VdbeRecordCompare(
         {
             assert(mem1.zMalloc == 0);  /* See comment below */
 
-            /* Invert the result if we are using DESC sort order. */
+            /* Invert the result if we are using DESC sort order.
+            ** 如果排序顺序为DESC,逆转结果
+            */
             if (pKeyInfo->aSortOrder && i < nField && pKeyInfo->aSortOrder[i])
             {
                 rc = -rc;
@@ -3416,6 +3443,9 @@ int sqlite3VdbeRecordCompare(
             ** rowid field were equal, then clear the PREFIX_SEARCH flag and set
             ** pPKey2->rowid to the value of the rowid field in (pKey1, nKey1).
             ** This is used by the OP_IsUnique opcode.
+            ** 如果带上了PREFIX_SEARCH标记,所有的字段,除了最后的rowid字段,都相等,那么清空
+            ** PREFIX_SEARCH标记,设置pPkey2->rowid为(pKey1, nKey1)中rowid字段的值,这个会被
+            ** OP_IsUnique操作符使用.
             */
             if ((pPKey2->flags & UNPACKED_PREFIX_SEARCH) && i == (pPKey2->nField - 1))
             {
@@ -3443,6 +3473,9 @@ int sqlite3VdbeRecordCompare(
     ** are considered to be equal.  Otherwise, the longer key is the
     ** larger.  As it happens, the pPKey2 will always be the longer
     ** if there is a difference.
+    ** rc == 0 意味着某一个key已经遍历完了所有的字段,而且遍历完的字段,两个key都相等.
+    ** 如果设置了UNPACKED_INCRKEY,那么认为key2更大.
+    ** 如果设置了UNPACKED_PREFIX_MATCH,拥有相同前缀的key被认为是相等的.否则,拥有字段更多的key更大.
     */
     assert(rc == 0);
     if (pPKey2->flags & UNPACKED_INCRKEY)

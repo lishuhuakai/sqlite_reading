@@ -106,6 +106,7 @@ int sqlite3BtreeIncrVacuum(Btree *);
 ** indices.)
 */
 #define BTREE_INTKEY     1    /* Table has only 64-bit signed integer keys */
+/* 仅仅只有key,并没有值 */
 #define BTREE_BLOBKEY    2    /* Table has keys only - no data */
 
 int sqlite3BtreeDropTable(Btree*, int, int*);

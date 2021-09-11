@@ -855,10 +855,12 @@ struct sqlite3
         u8 orphanTrigger;           /* Last statement is orphaned TEMP trigger */
     } init;
     int activeVdbeCnt;            /* Number of VDBEs currently executing */
+    /* 正在执行写操作的vdbe的个数 */
     int writeVdbeCnt;             /* Number of active VDBEs that are writing */
     int vdbeExecCnt;              /* Number of nested calls to VdbeExec() */
     int nExtension;               /* Number of loaded extensions */
     void **aExtension;            /* Array of shared library handles */
+    /* trace回调函数 */
     void (*xTrace)(void*, const char*);       /* Trace function */
     void *pTraceArg;                          /* Argument to the trace function */
     void (*xProfile)(void*, const char*, u64); /* Profiling function */
@@ -1099,6 +1101,8 @@ struct FuncDestructor
 ** sqlite3.pSavepoint. The first element in the list is the most recently
 ** opened savepoint. Savepoints are added to the list by the vdbe
 ** OP_Savepoint instruction.
+** 当前所有的savepoint都存储在一个链表中,链表头部位于sqlite3.pSavepoint,链表的第一个元素是最新的savepoint.
+**
 */
 struct Savepoint
 {
@@ -1444,6 +1448,7 @@ struct FKey
 struct KeyInfo
 {
     sqlite3 *db;        /* The database connection */
+    /* 字符编码 */
     u8 enc;             /* Text encoding - one of the SQLITE_UTF* values */
     u16 nField;         /* Number of entries in aColl[] */
     u8 *aSortOrder;     /* Sort order for each column.  May be NULL */
@@ -2094,12 +2099,14 @@ struct NameContext
 /*
 ** An instance of the following structure contains all information
 ** needed to generate code for a single SELECT statement.
+** 以下结构体包含了为单个SELECT语句生成字节码所需要的全部信息.
 **
 ** nLimit is set to -1 if there is no LIMIT clause.  nOffset is set to 0.
 ** If there is a LIMIT clause, the parser sets nLimit to the value of the
 ** limit and nOffset to the value of the offset (or 0 if there is not
 ** offset).  But later on, nLimit and nOffset become the memory locations
 ** in the VDBE that record the limit and offset counters.
+** nLimit设置成-1表示没有LIMIT子句,如果有一个LIMIT子句,nOffset设置成0,
 **
 ** addrOpenEphm[] entries contain the address of OP_OpenEphemeral opcodes.
 ** These addresses must be stored so that we can go back and fill in
@@ -2113,14 +2120,18 @@ struct NameContext
 */
 struct Select
 {
+    /* 输出结果列的语法树 */
     ExprList *pEList;      /* The fields of the result */
     u8 op;                 /* One of: TK_UNION TK_ALL TK_INTERSECT TK_EXCEPT */
     char affinity;         /* MakeRecord with this affinity for SRT_Set */
     u16 selFlags;          /* Various SF_* values */
     int iLimit, iOffset;   /* Memory registers holding LIMIT & OFFSET counters */
     int addrOpenEphm[3];   /* OP_OpenEphem opcodes related to this select */
+    /* 结果的个数 */
     double nSelectRow;     /* Estimated number of result rows */
+    /* from子句 */
     SrcList *pSrc;         /* The FROM clause */
+    /* where语句的语法树 */
     Expr *pWhere;          /* The WHERE clause */
     ExprList *pGroupBy;    /* The GROUP BY clause */
     Expr *pHaving;         /* The HAVING clause */
@@ -2128,6 +2139,7 @@ struct Select
     Select *pPrior;        /* Prior select in a compound select statement */
     Select *pNext;         /* Next select to the left in a compound */
     Select *pRightmost;    /* Right-most select in a compound select statement */
+    /* limit表达式 */
     Expr *pLimit;          /* LIMIT expression. NULL means not used. */
     Expr *pOffset;         /* OFFSET expression. NULL means not used. */
 };

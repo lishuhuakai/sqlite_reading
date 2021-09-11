@@ -55,9 +55,14 @@ static int findNextHostParameter(const char *zSql, int *pnToken)
 ** their current bindings. Or, if sqlite3.vdbeExecCnt is greater than 1,
 ** then the returned string holds a copy of zRawSql with "-- " prepended
 ** to each line of text.
+** 此函数返回指向内存中以空字符结尾的字符串的指针,内存从sqlite3DbMalloc()获得。
+** 如sqlite3.vdbeExecCnt为 1，则字符串包含 zRawSql的副本，但主机参数扩展为
+** 他们目前的绑定。 或者，如果sqlite3.vdbeExecCnt大于 1，
+** 然后返回的字符串包含一个 zRawSql 的副本，前面带有“--”到每一行文本。
 **
 ** The calling function is responsible for making sure the memory returned
 ** is eventually freed.
+** 调用者保证,释放内存.
 **
 ** ALGORITHM:  Scan the input string looking for host parameters in any of
 ** these forms:  ?, ?N, $A, @A, :A.  Take care to avoid text within
