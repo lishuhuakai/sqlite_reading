@@ -1544,10 +1544,14 @@ int sqlite3VdbeExec(
             ** or aggregate calls sqlite3GetFuncCollSeq(), this collation sequence will
             ** be returned. This is used by the built-in min(), max() and nullif()
             ** functions.
+            ** P4是一个指向CollSeq结构体的指针
+            ** 被内置的min(), max(), nullif()函数使用
             **
             ** If P1 is not zero, then it is a register that a subsequent min() or
             ** max() aggregate will set to 1 if the current row is not the minimum or
             ** maximum.  The P1 register is initialized to 0 by this instruction.
+            ** 如果P1非空,
+            ** 这条指令会将P1寄存器设置为0
             **
             ** The interface used by the implementation of the aforementioned functions
             ** to retrieve the collation sequence set by this opcode is not available
@@ -1806,6 +1810,7 @@ int sqlite3VdbeExec(
             ** in P1 is not an integer and cannot be converted into an integer
             ** without data loss, then jump immediately to P2, or if P2==0
             ** raise an SQLITE_MISMATCH exception.
+            ** 将寄存器P1中的值强制转换为一个整数,如果P1中的值不是整数,并且不能做转换,那么跳转到P2
             */
             case OP_MustBeInt:              /* jump, in1 */
             {
@@ -1968,10 +1973,12 @@ int sqlite3VdbeExec(
             **
             ** Compare the values in register P1 and P3.  If reg(P3)<reg(P1) then
             ** jump to address P2.
+            ** 比较P1和P3寄存器中的值,如果reg(P3)<reg(P1),那么跳转到P2来执行.
             **
             ** If the SQLITE_JUMPIFNULL bit of P5 is set and either reg(P1) or
             ** reg(P3) is NULL then take the jump.  If the SQLITE_JUMPIFNULL
             ** bit is clear then fall through if either operand is NULL.
+            ** 如果P5中设置了SQLITE_JUMPIFNULL,P1以及P3都为NULL,那么执行跳转.
             **
             ** The SQLITE_AFF_MASK portion of P5 must be an affinity character -
             ** SQLITE_AFF_TEXT, SQLITE_AFF_INTEGER, and so forth. An attempt is made
@@ -2162,10 +2169,13 @@ int sqlite3VdbeExec(
             ** Compare two vectors of registers in reg(P1)..reg(P1+P3-1) (call this
             ** vector "A") and in reg(P2)..reg(P2+P3-1) ("B").  Save the result of
             ** the comparison for use by the next OP_Jump instruct.
+            ** 比较两个寄存器数组 reg(P1)...Reg(P1+P3-1)以及reg(P2)...reg(P2+P3-1),将结果用于
+            ** 下一条OP_Jump指令
             **
             ** P4 is a KeyInfo structure that defines collating sequences and sort
             ** orders for the comparison.  The permutation applies to registers
             ** only.  The KeyInfo elements are used sequentially.
+            ** P4是一个KeyInfo结构,定义了collating sequences以及排序方式.
             **
             ** The comparison is a sort comparison, so NULLs compare equal,
             ** NULLs are less than numbers, numbers are less than strings,
@@ -2228,6 +2238,7 @@ int sqlite3VdbeExec(
             ** Jump to the instruction at address P1, P2, or P3 depending on whether
             ** in the most recent OP_Compare instruction the P1 vector was less than
             ** equal to, or greater than the P2 vector, respectively.
+            ** 根据上次比较的结果决定要跳转的指令,如果<0,跳转到P1, 等于0,跳转到P2,否则跳转到P3
             */
             case OP_Jump:               /* jump */
             {
@@ -2447,6 +2458,8 @@ int sqlite3VdbeExec(
             ** information about the format of the data.)  Extract the P2-th column
             ** from this record.  If there are less that (P2+1)
             ** values in the record, extract a NULL.
+            ** P1是一个游标,指向用MakeRecord指令构建的一个record.从P1指向的record提取第P2-th列
+            ** 放入P3寄存器.如果没有P2-th列,放入NULL
             **
             ** The value extracted is stored in register P3.
             **
@@ -3720,11 +3733,14 @@ int sqlite3VdbeExec(
             ** The cursor is always opened read/write even if
             ** the main database is read-only.  The ephemeral
             ** table is deleted automatically when the cursor is closed.
+            ** 在短暂的表中打开一个新的游标P1,游标可读可写.游标关闭之后,表会被删掉.
             **
             ** P2 is the number of columns in the ephemeral table.
             ** The cursor points to a BTree table if P4==0 and to a BTree index
             ** if P4 is not 0.  If P4 is not NULL, it points to a KeyInfo structure
             ** that defines the format of keys in the index.
+            ** P2是表中列的个数,如果P4为0, 游标指向一个BTree Table,否则指向BTree index.
+            ** 如果P4不为空,那么它指向一个KeyInfo结构体,定义了索引的key的格式.
             **
             ** This opcode was once called OpenTemp.  But that created
             ** confusion because the term "temp table", might refer either
@@ -3803,6 +3819,7 @@ int sqlite3VdbeExec(
             ** This opcode works like OP_OpenEphemeral except that it opens
             ** a transient index that is specifically designed to sort large
             ** tables using an external merge-sort algorithm.
+            ** 此操作符类似于OP_OpenEphemeral,它打开一个临时的索引
             */
             case OP_SorterOpen:
             {
@@ -3827,21 +3844,26 @@ int sqlite3VdbeExec(
             ** row of data.  The content of that one row in the content of memory
             ** register P2.  In other words, cursor P1 becomes an alias for the
             ** MEM_Blob content contained in register P2.
+            ** 打开一个新的游标,指向一个假表(fake table),它包含一行数据,此行数据放在寄存器P2之中
+            ** 换句话说,游标P1变成了寄存器P2中MEM_Blob内容的一个别名.
             **
             ** A pseudo-table created by this opcode is used to hold a single
             ** row output from the sorter so that the row can be decomposed into
             ** individual columns using the OP_Column opcode.  The OP_Column opcode
             ** is the only cursor opcode that works with a pseudo-table.
+            ** 此操作码构建了一个伪表,它用来持有sorter产生的单挑输出,可以用OP_Column操作码来取得单独的列值.
+            ** OP_Column也是唯一一条对伪表起作用的游标指令,
             **
             ** P3 is the number of fields in the records that will be stored by
             ** the pseudo-table.
+            ** P3寄存器中记录了记录中列的个数
             */
             case OP_OpenPseudo:
             {
                 VdbeCursor *pCx;
 
                 assert(pOp->p1 >= 0);
-                pCx = allocateCursor(p, pOp->p1, pOp->p3, -1, 0);
+                pCx = allocateCursor(p, pOp->p1, pOp->p3, -1, 0); /* 分配一个游标 */
                 if (pCx == 0) goto no_mem;
                 pCx->nullRow = 1;
                 pCx->pseudoTableReg = pOp->p2;
@@ -4111,6 +4133,7 @@ int sqlite3VdbeExec(
             **
             ** P1 is an open table cursor and P2 is a rowid integer.  Arrange
             ** for P1 to move so that it points to the rowid given by P2.
+            ** P1是表的游标,P2是一个rowid,使得游标移动到P2指向的记录
             **
             ** This is actually a deferred seek.  Nothing actually happens until
             ** the cursor is used to read a record.  That way, if no reads
@@ -4141,10 +4164,13 @@ int sqlite3VdbeExec(
             ** If P4==0 then register P3 holds a blob constructed by MakeRecord.  If
             ** P4>0 then register P3 is the first of P4 registers that form an unpacked
             ** record.
+            ** 如果P4为0,那么P3指向一个blob(由MakeRecord指令创建),如果P4>0,那么从P3开始的长度为P4
+            ** 的寄存器数组构成一个unpacked record.
             **
             ** Cursor P1 is on an index btree.  If the record identified by P3 and P4
             ** is a prefix of any entry in P1 then a jump is made to P2 and
             ** P1 is left pointing at the matching entry.
+            ** P1是一个游标,指向btree,如果由P3以及P4指定的record在P1指向的表中重复了,那么跳转到P2
             */
             /* Opcode: NotFound P1 P2 P3 P4 *
             **
@@ -4185,7 +4211,7 @@ int sqlite3VdbeExec(
                 {
 
                     assert(pC->isTable == 0);
-                    if (pOp->p4.i > 0)
+                    if (pOp->p4.i > 0) /* 列个数 */
                     {
                         r.pKeyInfo = pC->pKeyInfo;
                         r.nField = (u16)pOp->p4.i;
@@ -4337,6 +4363,8 @@ int sqlite3VdbeExec(
             ** with that key does not exist in table of P1, then jump to P2.
             ** If the record does exist, then fall through.  The cursor is left
             ** pointing to the record if it exists.
+            ** 将寄存器P3中的值作为一个整数key,如果通过这个key在P1表中找不到记录,跳转到P2
+            ** 记录存在,继续执行
             **
             ** The difference between this operation and NotFound is that this
             ** operation assumes the key is an integer and that P1 is a table whereas
@@ -4393,8 +4421,10 @@ int sqlite3VdbeExec(
             **
             ** Find the next available sequence number for cursor P1.
             ** Write the sequence number into register P2.
+            ** 找到游标P1的下一个可用的序列值,将序列值写入寄存器P2
             ** The sequence number on the cursor is incremented after this
             ** instruction.
+            ** 游标的序列值在这条指令之后,会增加
             */
             case OP_Sequence:             /* out2-prerelease */
             {
@@ -4545,7 +4575,7 @@ int sqlite3VdbeExec(
                         ** engine starts picking positive candidate ROWIDs at random until
                         ** it finds one that is not previously used. */
                         assert(pOp->p3 == 0);  /* We cannot be in random rowid mode if this is
-                 ** an AUTOINCREMENT table. */
+             ** an AUTOINCREMENT table. */
                         /* on the first attempt, simply do one more than previous */
                         v = lastRowid;
                         v &= (MAX_ROWID >> 1); /* ensure doesn't go negative */
@@ -4819,6 +4849,7 @@ int sqlite3VdbeExec(
             /* Opcode: SorterData P1 P2 * * *
             **
             ** Write into register P2 the current sorter data for sorter cursor P1.
+            ** 将当前排序游标P1指向的值写入P2寄存器
             */
             case OP_SorterData:
             {
@@ -5047,6 +5078,7 @@ int sqlite3VdbeExec(
             **
             ** This opcode does exactly the same thing as OP_Rewind except that
             ** it increments an undocumented global variable used for testing.
+            ** 此操作码等价于OP_Rewind,除了它会递增一个用于测试的全局变量
             **
             ** Sorting is accomplished by writing records into a sorting index,
             ** then rewinding that index and playing it back from beginning to
@@ -5054,6 +5086,8 @@ int sqlite3VdbeExec(
             ** rewinding so that the global variable will be incremented and
             ** regression tests can determine whether or not the optimizer is
             ** correctly optimizing out sorts.
+            ** 所谓的排序,指的是,将一条记录写入一个sorting index,然后调整游标,重新遍历.
+            ** 我们使用OP_Sort而不是OP_Rewind,仅仅是为了测试需要
             */
             case OP_SorterSort:    /* jump */
 #ifdef SQLITE_OMIT_MERGE_SORT
@@ -5062,7 +5096,7 @@ int sqlite3VdbeExec(
             case OP_Sort:          /* jump */
             {
 #ifdef SQLITE_TEST
-                sqlite3_sort_count++;
+                sqlite3_sort_count++; /**/
                 sqlite3_search_count--;
 #endif
                 p->aCounter[SQLITE_STMTSTATUS_SORT - 1]++;
@@ -5116,6 +5150,8 @@ int sqlite3VdbeExec(
             ** table or index.  If there are no more key/value pairs then fall through
             ** to the following instruction.  But if the cursor advance was successful,
             ** jump immediately to P2.
+            ** 移动游标P1,让其指向一下一个key/data对,如果游标到了最后的位置,跳转到下一条指令,
+            ** 否则跳转到P2指令处继续执行
             **
             ** The P1 cursor must be for a real table, not a pseudo-table.
             **
@@ -5194,6 +5230,7 @@ int sqlite3VdbeExec(
             ** Register P2 holds an SQL index key made using the
             ** MakeRecord instructions.  This opcode writes that key
             ** into the index P1.  Data for the entry is nil.
+            ** 寄存器P2持有一个通过MakeRecord指令创建的SQL index key, 此操作码将key通过索引P1写入
             **
             ** P3 is a flag that provides a hint to the b-tree layer that this
             ** insert is likely to be an append.
@@ -6096,6 +6133,7 @@ int sqlite3VdbeExec(
             /* Opcode: IfPos P1 P2 * * *
             **
             ** If the value of register P1 is 1 or greater, jump to P2.
+            ** 如果寄存器P1中的值大于等于1,跳转到P2指向的指令继续执行
             **
             ** It is illegal to use this instruction on a register that does
             ** not contain an integer.  An assertion fault will result if you try.
@@ -6155,6 +6193,7 @@ int sqlite3VdbeExec(
             ** function has P5 arguments.   P4 is a pointer to the FuncDef
             ** structure that specifies the function.  Use register
             ** P3 as the accumulator.
+            ** 执行聚集函数的一步,P4指向要执行的函数,P5是函数的参数值.P3是accumulator(积累器)
             **
             ** The P5 arguments are taken from register P2 and its
             ** successors.

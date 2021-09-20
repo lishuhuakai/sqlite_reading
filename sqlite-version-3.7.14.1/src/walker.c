@@ -11,6 +11,7 @@
 *************************************************************************
 ** This file contains routines used for walking the parser tree for
 ** an SQL statement.
+** 此文件中包含遍历语法树的函数
 */
 #include "sqliteInt.h"
 #include <stdlib.h>
@@ -21,6 +22,7 @@
 ** Walk an expression tree.  Invoke the callback once for each node
 ** of the expression, while decending.  (In other words, the callback
 ** is invoked before visiting children.)
+** 遍历表达式tree,为表达式的每一个节点调用回调函数.
 **
 ** The return value from the callback should be one of the WRC_*
 ** constants to specify how to proceed with the walk.
@@ -29,6 +31,7 @@
 **
 **    WRC_Prune         Do not descend into child nodes.  But allow
 **                      the walk to continue with sibling nodes.
+**                      无需再访问子节点,但是允许访问兄弟节点
 **
 **    WRC_Abort         Do no more callbacks.  Unwind the stack and
 **                      return the top-level walk call.
@@ -42,10 +45,11 @@ int sqlite3WalkExpr(Walker *pWalker, Expr *pExpr)
     if (pExpr == 0) return WRC_Continue;
     testcase(ExprHasProperty(pExpr, EP_TokenOnly));
     testcase(ExprHasProperty(pExpr, EP_Reduced));
-    rc = pWalker->xExprCallback(pWalker, pExpr);
+    rc = pWalker->xExprCallback(pWalker, pExpr); /* 对表达式调用回调 */
     if (rc == WRC_Continue
         && !ExprHasAnyProperty(pExpr, EP_TokenOnly))
     {
+        /* 左子树, 右子树 */
         if (sqlite3WalkExpr(pWalker, pExpr->pLeft)) return WRC_Abort;
         if (sqlite3WalkExpr(pWalker, pExpr->pRight)) return WRC_Abort;
         if (ExprHasProperty(pExpr, EP_xIsSelect))
@@ -63,6 +67,7 @@ int sqlite3WalkExpr(Walker *pWalker, Expr *pExpr)
 /*
 ** Call sqlite3WalkExpr() for every expression in list p or until
 ** an abort request is seen.
+** 遍历p中的每一个表达式
 */
 int sqlite3WalkExprList(Walker *pWalker, ExprList *p)
 {
@@ -83,11 +88,14 @@ int sqlite3WalkExprList(Walker *pWalker, ExprList *p)
 ** not invoke the SELECT callback on p, but do (of course) invoke
 ** any expr callbacks and SELECT callbacks that come from subqueries.
 ** Return WRC_Abort or WRC_Continue.
+** 遍历select语句中的所有表达式
 */
 int sqlite3WalkSelectExpr(Walker *pWalker, Select *p)
 {
     if (sqlite3WalkExprList(pWalker, p->pEList)) return WRC_Abort;
+    /* 遍历where表达式 */
     if (sqlite3WalkExpr(pWalker, p->pWhere)) return WRC_Abort;
+    /* 遍历group by表达式 */
     if (sqlite3WalkExprList(pWalker, p->pGroupBy)) return WRC_Abort;
     if (sqlite3WalkExpr(pWalker, p->pHaving)) return WRC_Abort;
     if (sqlite3WalkExprList(pWalker, p->pOrderBy)) return WRC_Abort;

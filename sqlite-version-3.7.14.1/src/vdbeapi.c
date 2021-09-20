@@ -36,6 +36,7 @@ int sqlite3_expired(sqlite3_stmt *pStmt)
 ** Check on a Vdbe to make sure it has not been finalized.  Log
 ** an error and return true if it has been finalized (or is otherwise
 ** invalid).  Return false if it is ok.
+** 检查Vdbe来保证它没有被销毁掉,如果销毁了,记录写错误日志,返回true
 */
 static int vdbeSafety(Vdbe *p)
 {

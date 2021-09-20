@@ -46,3 +46,7 @@ btree以及更下层的pager模块,更多的是做了一层抽象.为上层提�
 
 ![](https://github.com/lishuhuakai/sqlite_reading/blob/main/Document/official_documents/imgs/explain1.png)
 
+## 0919
+
+今天读的代码,是字节码的生成,包括insert (insert.c),update(update.c), delete(delete.c), where(where.c),前面三个生成的代码很容易理解,where准确的来说,属于插入新的一部分,这部分代码应该是最难啃的,因为要利用索引来提高查找速度,不过也还好.
+

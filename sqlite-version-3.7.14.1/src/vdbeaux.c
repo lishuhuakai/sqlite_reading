@@ -284,6 +284,8 @@ int sqlite3VdbeMakeLabel(Vdbe *p)
 ** Resolve label "x" to be the address of the next instruction to
 ** be inserted.  The parameter "x" must have been obtained from
 ** a prior call to sqlite3VdbeMakeLabel().
+** 调整label x,将其指向下一条要插入的指令处,x由之前的sqlite3VdbeMakeLable()
+** 指令生成.
 */
 void sqlite3VdbeResolveLabel(Vdbe *p, int x)
 {
@@ -513,6 +515,7 @@ static void resolveP2Values(Vdbe *p, int *pMaxFuncArgs)
 
 /*
 ** Return the address of the next instruction to be inserted.
+** 返回下一条指令的位置
 */
 int sqlite3VdbeCurrentAddr(Vdbe *p)
 {

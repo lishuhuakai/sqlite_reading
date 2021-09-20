@@ -11,6 +11,7 @@
 *************************************************************************
 ** This file contains C code routines that are called by the parser
 ** to handle UPDATE statements.
+** 此文件包含处理update语句的c代码
 */
 #include "sqliteInt.h"
 
@@ -32,6 +33,7 @@ static void updateVirtualTable(
 ** The most recently coded instruction was an OP_Column to retrieve the
 ** i-th column of table pTab. This routine sets the P4 parameter of the
 ** OP_Column to the default value, if any.
+** 最近生成的字节码是OP_Column,用于从pTab中获取i-th列,此函数设置OP_Column的第四个参数
 **
 ** The default value of a column is specified by a DEFAULT clause in the
 ** column definition. This was either supplied by the user when the table
@@ -41,22 +43,29 @@ static void updateVirtualTable(
 ** from the P4 parameter of the OP_Column instruction, is returned instead.
 ** If the former, then all row-records are guaranteed to include a value
 ** for the column and the P4 value is not required.
+** 一个column的默认值有DEFAULT语句定义,这个可能是用户创建表的时候自行指定的,也有可能是通过alter table
+** 命令定义的.如果是后者, 表中的row-records 可能并不包含此列的值,以及默认值,
+** 如果是前者,所有的row-records保证包含列的值,而且P4值并不需要.
 **
 ** Column definitions created by an ALTER TABLE command may only have
 ** literal default values specified: a number, null or a string. (If a more
 ** complicated default expression value was provided, it is evaluated
 ** when the ALTER TABLE is executed and one of the literal values written
 ** into the sqlite_master table.)
+** 通过alter table命令来更改列的定义,可能只会拥有字面意义上的默认值,如果一个数字,空值,或者字符串.
 **
 ** Therefore, the P4 parameter is only required if the default value for
 ** the column is a literal number, string or null. The sqlite3ValueFromExpr()
 ** function is capable of transforming these types of expressions into
 ** sqlite3_value objects.
+** 因此,P4参数仅当列的值是一个数组,字符串,或者null的时候需要,sqlite3ValueFromExpr()函数可以将这些类型的表达式转换
+** 为sqlite3_value
 **
 ** If parameter iReg is not negative, code an OP_RealAffinity instruction
 ** on register iReg. This is used when an equivalent integer value is
 ** stored in place of an 8-byte floating point value in order to save
 ** space.
+** 如果iReg不为负数,生成OP_RealAffinity指令到iReg上,
 */
 void sqlite3ColumnDefault(Vdbe *v, Table *pTab, int i, int iReg)
 {
@@ -68,6 +77,7 @@ void sqlite3ColumnDefault(Vdbe *v, Table *pTab, int i, int iReg)
         Column *pCol = &pTab->aCol[i];
         VdbeComment((v, "%s.%s", pTab->zName, pCol->zName));
         assert(i < pTab->nCol);
+        /* 生成pValue */
         sqlite3ValueFromExpr(sqlite3VdbeDb(v), pCol->pDflt, enc,
                              pCol->affinity, &pValue);
         if (pValue)
@@ -89,11 +99,14 @@ void sqlite3ColumnDefault(Vdbe *v, Table *pTab, int i, int iReg)
 **   UPDATE OR IGNORE table_wxyz SET a=b, c=d WHERE e<5 AND f NOT NULL;
 **          \_______/ \________/     \______/       \________________/
 *            onError   pTabList      pChanges             pWhere
+** 为update语句生成字节码
 */
 void sqlite3Update(
     Parse *pParse,         /* The parser context */
+    /* 表 */
     SrcList *pTabList,     /* The table in which we should change things */
     ExprList *pChanges,    /* Things to be changed */
+    /* where子句 */
     Expr *pWhere,          /* The WHERE clause.  May be null */
     int onError            /* How to handle constraint errors */
 )
@@ -144,6 +157,7 @@ void sqlite3Update(
     assert(pTabList->nSrc == 1);
 
     /* Locate the table which we want to update.
+    ** 只有一张表
     */
     pTab = sqlite3SrcListLookup(pParse, pTabList);
     if (pTab == 0) goto update_cleanup;
@@ -182,6 +196,7 @@ void sqlite3Update(
     ** The index cursors might not be used, but if they are used they
     ** need to occur right after the database cursor.  So go ahead and
     ** allocate enough space, just in case.
+    **
     */
     pTabList->a[0].iCursor = iCur = pParse->nTab++;
     for (pIdx = pTab->pIndex; pIdx; pIdx = pIdx->pNext)
@@ -199,6 +214,7 @@ void sqlite3Update(
     ** for each column to be updated in the pChanges array.  For each
     ** column to be updated, make sure we have authorization to change
     ** that column.
+    ** 解析update语句中的column名称,找到column在taable中的索引.
     */
     chngRowid = 0;
     for (i = 0; i < pChanges->nExpr; i++)
@@ -220,7 +236,7 @@ void sqlite3Update(
                 break;
             }
         }
-        if (j >= pTab->nCol)
+        if (j >= pTab->nCol) /* 找不到对应的col */
         {
             if (sqlite3IsRowid(pChanges->a[i].zName))
             {
@@ -283,7 +299,7 @@ void sqlite3Update(
                 }
             }
         }
-        aRegIdx[j] = reg;
+        aRegIdx[j] = reg; /* 寄存器号 */
     }
 
     /* Begin generating code. */
@@ -344,8 +360,13 @@ void sqlite3Update(
     }
 
     /* Begin the database scan
+    ** 开始数据库的扫描
     */
+    /* 将regRowSet -- regOldRowid这几个寄存器置空 */
     sqlite3VdbeAddOp3(v, OP_Null, 0, regRowSet, regOldRowid);
+    /* sqlite3WhereBegin -- sqlite3WhereEnd生成循环代码,在这个中间生成的代码可以遍历where子句产生的每一条记录
+    **
+    */
     pWInfo = sqlite3WhereBegin(
                  pParse, pTabList, pWhere, 0, 0, WHERE_ONEPASS_DESIRED, 0
              );
@@ -354,22 +375,24 @@ void sqlite3Update(
 
     /* Remember the rowid of every item to be updated.
     */
+    /* 获取rowid到regOldRowid寄存器中 */
     sqlite3VdbeAddOp2(v, OP_Rowid, iCur, regOldRowid);
     if (!okOnePass)
     {
+        /* rowid添加到rowset之中 */
         sqlite3VdbeAddOp2(v, OP_RowSetAdd, regRowSet, regOldRowid);
     }
 
     /* End the database scan loop.
     */
-    sqlite3WhereEnd(pWInfo);
+    sqlite3WhereEnd(pWInfo); /* 到这里已经获取到了所有要更新的条目的rowid */
 
     /* Initialize the count of updated rows
     */
-    if ((db->flags & SQLITE_CountRows) && !pParse->pTriggerTab)
+    if ((db->flags & SQLITE_CountRows) && !pParse->pTriggerTab) /* 统计更新的row的条数 */
     {
         regRowCount = ++pParse->nMem;
-        sqlite3VdbeAddOp2(v, OP_Integer, 0, regRowCount);
+        sqlite3VdbeAddOp2(v, OP_Integer, 0, regRowCount); /* 分配一个寄存器用于计数 */
     }
 
     if (!isView)
@@ -380,7 +403,9 @@ void sqlite3Update(
         ** action, then we need to open all indices because we might need
         ** to be deleting some records.
         */
+        /* 打开表中所有的索引 */
         if (!okOnePass) sqlite3OpenTable(pParse, iCur, iDb, pTab, OP_OpenWrite);
+
         if (onError == OE_Replace)
         {
             openAll = 1;
@@ -403,6 +428,7 @@ void sqlite3Update(
             if (openAll || aRegIdx[i] > 0)
             {
                 KeyInfo *pKey = sqlite3IndexKeyinfo(pParse, pIdx);
+                /* 打开所有的索引,用于写操作 */
                 sqlite3VdbeAddOp4(v, OP_OpenWrite, iCur + i + 1, pIdx->tnum, iDb,
                                   (char*)pKey, P4_KEYINFO_HANDOFF);
                 assert(pParse->nTab > iCur + i + 1);
@@ -415,16 +441,18 @@ void sqlite3Update(
     {
         int a1 = sqlite3VdbeAddOp1(v, OP_NotNull, regOldRowid);
         addr = sqlite3VdbeAddOp0(v, OP_Goto);
-        sqlite3VdbeJumpHere(v, a1);
+        sqlite3VdbeJumpHere(v, a1); /* 先生成goto指令 */
     }
     else
     {
+        /* 从rowset中读取出一条记录,放入regOldRowid寄存器 */
         addr = sqlite3VdbeAddOp3(v, OP_RowSetRead, regRowSet, 0, regOldRowid);
     }
 
     /* Make cursor iCur point to the record that is being updated. If
     ** this record does not exist for some reason (deleted by a trigger,
     ** for example, then jump to the next iteration of the RowSet loop.  */
+    /* 如果为regOldRowid寄存器的值为NULL,立即跳转到addr这个label处 */
     sqlite3VdbeAddOp3(v, OP_NotExists, iCur, addr, regOldRowid);
 
     /* If the record number will change, set register regNewRowid to
@@ -479,6 +507,7 @@ void sqlite3Update(
     newmask = sqlite3TriggerColmask(
                   pParse, pTrigger, pChanges, 1, TRIGGER_BEFORE, pTab, onError
               );
+    /* 清空regNew -- regNew + pTab->nCol - 1这几个寄存器的值 */
     sqlite3VdbeAddOp3(v, OP_Null, 0, regNew, regNew + pTab->nCol - 1);
     for (i = 0; i < pTab->nCol; i++)
     {
@@ -491,6 +520,7 @@ void sqlite3Update(
             j = aXRef[i];
             if (j >= 0)
             {
+                /* 生成代码,将结果放入regNew+i这个寄存器中 */
                 sqlite3ExprCode(pParse, pChanges->a[j].pExpr, regNew + i);
             }
             else if (0 == (tmask & TRIGGER_BEFORE) || i > 31 || (newmask & (1 << i)))
@@ -502,6 +532,7 @@ void sqlite3Update(
                 */
                 testcase(i == 31);
                 testcase(i == 32);
+                /* 否则提取出原本的值 */
                 sqlite3VdbeAddOp3(v, OP_Column, iCur, i, regNew + i);
                 sqlite3ColumnDefault(v, pTab, i, regNew + i);
             }
@@ -546,6 +577,7 @@ void sqlite3Update(
         int j1;                       /* Address of jump instruction */
 
         /* Do constraint checks. */
+        /* 一致性检查 */
         sqlite3GenerateConstraintChecks(pParse, pTab, iCur, regNewRowid,
                                         aRegIdx, (chngRowid ? regOldRowid : 0), 1, onError, addr, 0);
 
@@ -557,6 +589,7 @@ void sqlite3Update(
 
         /* Delete the index entries associated with the current record.  */
         j1 = sqlite3VdbeAddOp3(v, OP_NotExists, iCur, 0, regOldRowid);
+        /* 删掉与此条记录相关的索引条目 */
         sqlite3GenerateRowIndexDelete(pParse, pTab, iCur, aRegIdx);
 
         /* If changing the record number, delete the old record.  */
@@ -571,7 +604,9 @@ void sqlite3Update(
             sqlite3FkCheck(pParse, pTab, 0, regNewRowid);
         }
 
-        /* Insert the new index entries and the new record. */
+        /* Insert the new index entries and the new record.
+        ** 插入新的索引条目以及新的记录
+        */
         sqlite3CompleteInsertion(pParse, pTab, iCur, regNewRowid, aRegIdx, 1, 0, 0);
 
         /* Do any ON CASCADE, SET NULL or SET DEFAULT operations required to
@@ -589,12 +624,13 @@ void sqlite3Update(
     {
         sqlite3VdbeAddOp2(v, OP_AddImm, regRowCount, 1);
     }
-
+    /* 调用触发器 */
     sqlite3CodeRowTrigger(pParse, pTrigger, TK_UPDATE, pChanges,
                           TRIGGER_AFTER, pTab, regOldRowid, onError, addr);
 
     /* Repeat the above with the next record to be updated, until
     ** all record selected by the WHERE clause have been updated.
+    ** 一直循环,直到所有的记录都被更新完成.
     */
     sqlite3VdbeAddOp2(v, OP_Goto, 0, addr);
     sqlite3VdbeJumpHere(v, addr);

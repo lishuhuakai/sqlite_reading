@@ -116,6 +116,7 @@ static int blobSeekToRow(Incrblob *p, sqlite3_int64 iRow, char **pzErr)
 
 /*
 ** Open a blob handle.
+** 打开一个blob句柄
 */
 int sqlite3_blob_open(
     sqlite3* db,            /* The database connection */
@@ -177,7 +178,7 @@ int sqlite3_blob_open(
 
     pBlob = (Incrblob *)sqlite3DbMallocZero(db, sizeof(Incrblob));
     if (!pBlob) goto blob_open_out;
-    pParse = sqlite3StackAllocRaw(db, sizeof(*pParse));
+    pParse = sqlite3StackAllocRaw(db, sizeof(*pParse)); /* 分配一个parser */
     if (!pParse) goto blob_open_out;
 
     do
@@ -215,7 +216,7 @@ int sqlite3_blob_open(
         }
 
         /* Now search pTab for the exact column. */
-        for (iCol = 0; iCol < pTab->nCol; iCol++)
+        for (iCol = 0; iCol < pTab->nCol; iCol++) /* 找到对应的column */
         {
             if (sqlite3StrICmp(pTab->aCol[iCol].zName, zColumn) == 0)
             {
@@ -395,12 +396,13 @@ int sqlite3_blob_close(sqlite3_blob *pBlob)
 
 /*
 ** Perform a read or write operation on a blob
+** 在一个blob上执行读/写操作
 */
 static int blobReadWrite(
     sqlite3_blob *pBlob,
     void *z,
     int n,
-    int iOffset,
+    int iOffset, /* 偏移 */
     int (*xCall)(BtCursor*, u32, u32, void*)
 )
 {

@@ -4590,10 +4590,14 @@ int sqlite3BtreeKey(BtCursor *pCur, u32 offset, u32 amt, void *pBuf)
 ** Read part of the data associated with cursor pCur.  Exactly
 ** "amt" bytes will be transfered into pBuf[].  The transfer
 ** begins at "offset".
+** 从游标pCur中读取部分数据到pBuf[]中
 **
 ** Return SQLITE_OK on success or an error code if anything goes
 ** wrong.  An error is returned if "offset+amt" is larger than
 ** the available payload.
+** @param offset 偏移
+** @param pBuf 数据将会放入此结构
+** @param amt amount 数量
 */
 int sqlite3BtreeData(BtCursor *pCur, u32 offset, u32 amt, void *pBuf)
 {

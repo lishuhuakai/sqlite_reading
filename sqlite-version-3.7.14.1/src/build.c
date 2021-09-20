@@ -291,7 +291,7 @@ Table *sqlite3FindTable(sqlite3 *db, const char *zName, const char *zDatabase)
     int i;
     int nName;
     assert(zName != 0);
-    nName = sqlite3Strlen30(zName);
+    nName = sqlite3Strlen30(zName); /* 表的名称 */
     /* All mutexes are required for schema access.  Make sure we hold them. */
     assert(zDatabase != 0 || sqlite3BtreeHoldsAllMutexes(db));
     for (i = OMIT_TEMPDB; i < db->nDb; i++)
@@ -310,10 +310,13 @@ Table *sqlite3FindTable(sqlite3 *db, const char *zName, const char *zDatabase)
 ** table given the name of that table and (optionally) the name of the
 ** database containing the table.  Return NULL if not found.  Also leave an
 ** error message in pParse->zErrMsg.
+** 在内存中定位对应的结构(zDbase指定的数据库,zName描述的表),如果没有找到,返回NULL
 **
 ** The difference between this routine and sqlite3FindTable() is that this
 ** routine leaves an error message in pParse->zErrMsg where
 ** sqlite3FindTable() does not.
+** 此函数和sqlite3FindTable()最大的不同在于,这个函数会在pParse->zErrMsg中留下错误信息,
+** 而sqlite3FindTable()不会.
 */
 Table *sqlite3LocateTable(
     Parse *pParse,         /* context in which to report errors */
@@ -554,17 +557,22 @@ static void sqliteDeleteColumnNames(sqlite3 *db, Table *pTable)
 /*
 ** Remove the memory data structures associated with the given
 ** Table.  No changes are made to disk by this routine.
+** 移除与给定表相关联的内存数据结构.此函数不会造成磁盘上的数据发生变化.
 **
 ** This routine just deletes the data structure.  It does not unlink
 ** the table data structure from the hash table.  But it does destroy
 ** memory structures of the indices and foreign keys associated with
 ** the table.
+** 这个函数做的仅仅是删除数据结构.它并不删除表数据结构.但是它确实会删除索引的内存结构
+** 以及和表相关的外键.
 **
 ** The db parameter is optional.  It is needed if the Table object
 ** contains lookaside memory.  (Table objects in the schema do not use
 ** lookaside memory, but some ephemeral Table objects do.)  Or the
 ** db parameter can be used with db->pnBytesFreed to measure the memory
 ** used by the Table object.
+** db参数是可选的.如果表包含lookaside memory的话,它是必须的.(schema的table不使用后备 memory
+** 但是一些持久化的表包含)
 */
 void sqlite3DeleteTable(sqlite3 *db, Table *pTable)
 {
@@ -579,12 +587,14 @@ void sqlite3DeleteTable(sqlite3 *db, Table *pTable)
 
     /* Record the number of outstanding lookaside allocations in schema Tables
     ** prior to doing any free() operations.  Since schema Tables do not use
-    ** lookaside, this number should not change. */
+    ** lookaside, this number should not change.
+    **
+    */
     TESTONLY(nLookaside = (db && (pTable->tabFlags & TF_Ephemeral) == 0) ?
                           db->lookaside.nOut : 0);
 
     /* Delete all indices associated with this table. */
-    for (pIndex = pTable->pIndex; pIndex; pIndex = pNext)
+    for (pIndex = pTable->pIndex; pIndex; pIndex = pNext) /* 遍历索引 */
     {
         pNext = pIndex->pNext;
         assert(pIndex->pSchema == pTable->pSchema);
@@ -647,6 +657,7 @@ void sqlite3UnlinkAndDeleteTable(sqlite3 *db, int iDb, const char *zTabName)
 ** token.  Space to hold the returned string
 ** is obtained from sqliteMalloc() and must be freed by the calling
 ** function.
+** 给定一个token,返回一个包含着此token的字符串
 **
 ** Any quotation marks (ex:  "name", 'name', [name], or `name`) that
 ** surround the body of the token are removed.
@@ -1451,7 +1462,7 @@ void sqlite3AddCollateType(Parse *pParse, Token *pToken)
 CollSeq *sqlite3LocateCollSeq(Parse *pParse, const char *zName)
 {
     sqlite3 *db = pParse->db;
-    u8 enc = ENC(db);
+    u8 enc = ENC(db); /* 编码 */
     u8 initbusy = db->init.busy;
     CollSeq *pColl;
 

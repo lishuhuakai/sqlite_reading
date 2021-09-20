@@ -48,6 +48,7 @@ static void incrAggFunctionDepth(Expr *pExpr, int N)
 ** Turn the pExpr expression into an alias for the iCol-th column of the
 ** result set in pEList.
 **
+**
 ** If the result set column is a simple column reference, then this routine
 ** makes an exact copy.  But for any other kind of expression, this
 ** routine make a copy of the result set column as the argument to the
@@ -166,13 +167,17 @@ static int nameInUsingClause(IdList *pUsing, const char *zCol)
 ** that name in the set of source tables in pSrcList and make the pExpr
 ** expression node refer back to that source column.  The following changes
 ** are made to pExpr:
+** 给定列的名称,形式为X.Y.Z或者Y.Z或者Z,在pSrcList的来源表中查找此名称
 **
 **    pExpr->iDb           Set the index in db->aDb[] of the database X
 **                         (even if X is implied).
+**                         需要填充pExpr->iDb,是对应数据库的下标值,通过这个值可以找到对应数据库
 **    pExpr->iTable        Set to the cursor number for the table obtained
 **                         from pSrcList.
+**                         游标值
 **    pExpr->pTab          Points to the Table structure of X.Y (even if
 **                         X and/or Y are implied.)
+**                         指向表
 **    pExpr->iColumn       Set to the column number within the table.
 **    pExpr->op            Set to TK_COLUMN.
 **    pExpr->pLeft         Any expression this points to is deleted
@@ -227,14 +232,15 @@ static int lookupName(
         {
             for (i = 0, pItem = pSrcList->a; i < pSrcList->nSrc; i++, pItem++)
             {
-                Table *pTab;
-                int iDb;
+                Table *pTab; /* 表 */
+                int iDb; /* 数据库序号 */
                 Column *pCol;
 
                 pTab = pItem->pTab;
                 assert(pTab != 0 && pTab->zName != 0);
                 iDb = sqlite3SchemaToIndex(db, pTab->pSchema);
                 assert(pTab->nCol > 0);
+                /* 找到对应的表 */
                 if (zTab)
                 {
                     if (pItem->zAlias)
@@ -257,12 +263,13 @@ static int lookupName(
                 }
                 if (0 == (cntTab++))
                 {
-                    pExpr->iTable = pItem->iCursor;
+                    pExpr->iTable = pItem->iCursor; /* 记录下游标 */
                     pExpr->pTab = pTab;
                     pSchema = pTab->pSchema;
                     pMatch = pItem;
                 }
-                for (j = 0, pCol = pTab->aCol; j < pTab->nCol; j++, pCol++)
+                /* 找到对应的列 */
+                for (j = 0, pCol = pTab->aCol; j < pTab->nCol; j++, pCol++) /* 遍历表中的列 */
                 {
                     if (sqlite3StrICmp(pCol->zName, zCol) == 0)
                     {
@@ -370,6 +377,7 @@ static int lookupName(
         ** If the input is of the form Z (not Y.Z or X.Y.Z) then the name Z
         ** might refer to an result-set alias.  This happens, for example, when
         ** we are resolving names in the WHERE clause of the following command:
+        ** 如果输入是Z这种形式,Z可能是结果集中元素的一个别名
         **
         **     SELECT a+b AS x FROM table WHERE x<10;
         **
@@ -377,6 +385,7 @@ static int lookupName(
         ** forms the result set entry ("a+b" in the example) and return immediately.
         ** Note that the expression in the result set should have already been
         ** resolved by the time the WHERE clause is resolved.
+        ** 这种情况下,进行别名替换
         */
         if (cnt == 0 && (pEList = pNC->pEList) != 0 && zTab == 0)
         {
@@ -532,14 +541,17 @@ Expr *sqlite3CreateColumnExpr(sqlite3 *db, SrcList *pSrc, int iSrc, int iCol)
 
 /*
 ** This routine is callback for sqlite3WalkExpr().
+** 此函数是sqlite3WalkExpr()的回调函数
 **
 ** Resolve symbolic names into TK_COLUMN operators for the current
 ** node in the expression tree.  Return 0 to continue the search down
 ** the tree or 2 to abort the tree walk.
 **
+**
 ** This routine also does error checking and name resolution for
 ** function names.  The operator for aggregate functions is changed
 ** to TK_AGG_FUNCTION.
+** @param pExpr 带解析的表达式
 */
 static int resolveExprStep(Walker *pWalker, Expr *pExpr)
 {
@@ -571,6 +583,7 @@ static int resolveExprStep(Walker *pWalker, Expr *pExpr)
         /* The special operator TK_ROW means use the rowid for the first
         ** column in the FROM clause.  This is used by the LIMIT and ORDER BY
         ** clause processing on UPDATE and DELETE statements.
+        ** TK_ROW意味着使用from的第一个column的rowid,这个被limit以及order by在update以及delete语句中使用
         */
         case TK_ROW:
         {
@@ -609,8 +622,8 @@ static int resolveExprStep(Walker *pWalker, Expr *pExpr)
             if (pRight->op == TK_ID)
             {
                 zDb = 0;
-                zTable = pExpr->pLeft->u.zToken;
-                zColumn = pRight->u.zToken;
+                zTable = pExpr->pLeft->u.zToken; /* 表名 */
+                zColumn = pRight->u.zToken; /* 列名 */
             }
             else
             {
@@ -623,11 +636,14 @@ static int resolveExprStep(Walker *pWalker, Expr *pExpr)
         }
 
         /* Resolve function names
+        ** 函数名称的解析
         */
         case TK_CONST_FUNC:
         case TK_FUNCTION:
         {
+            /* 参数列表 */
             ExprList *pList = pExpr->x.pList;    /* The argument list */
+            /* 参数个数 */
             int n = pList ? pList->nExpr : 0;    /* Number of arguments */
             int no_such_func = 0;       /* True if no such function exists */
             int wrong_num_args = 0;     /* True if wrong number of arguments */
@@ -640,7 +656,7 @@ static int resolveExprStep(Walker *pWalker, Expr *pExpr)
 
             testcase(pExpr->op == TK_CONST_FUNC);
             assert(!ExprHasProperty(pExpr, EP_xIsSelect));
-            zId = pExpr->u.zToken;
+            zId = pExpr->u.zToken; /* 函数名称 */
             nId = sqlite3Strlen30(zId);
             pDef = sqlite3FindFunction(pParse->db, zId, nId, n, enc, 0);
             if (pDef == 0)
@@ -1109,6 +1125,7 @@ static int resolveOrderGroupBy(
 
 /*
 ** Resolve names in the SELECT statement p and all of its descendents.
+** 解析select语句中的name,以及它的所有后代
 */
 static int resolveSelectStep(Walker *pWalker, Select *p)
 {
@@ -1317,9 +1334,12 @@ static int resolveSelectStep(Walker *pWalker, Select *p)
 ** table columns and result-set columns.  At the same time, do error
 ** checking on function usage and set a flag if any aggregate functions
 ** are seen.
+** 此函数遍历表达式树,并且解析表中列的引用,以及结果集中的列,与此同时,检查函数的使用,如果有聚集函数
+** 的话,设置标记.
 **
 ** To resolve table columns references we look for nodes (or subtrees) of the
 ** form X.Y.Z or Y.Z or just Z where
+** 为了解析表中列的引用,我们从 X.Y.Z或者Y.Z或者X node(或者子树)
 **
 **      X:   The name of a database.  Ex:  "main" or "temp" or
 **           the symbolic name assigned to an ATTACH-ed database.
@@ -1330,6 +1350,7 @@ static int resolveSelectStep(Walker *pWalker, Select *p)
 **      Z:   The name of a column in table Y.
 **
 ** The node at the root of the subtree is modified as follows:
+** 子树的root节点
 **
 **    Expr.op        Changed to TK_COLUMN
 **    Expr.pTab      Points to the Table object for X.Y
@@ -1343,10 +1364,13 @@ static int resolveSelectStep(Walker *pWalker, Select *p)
 ** is replaced by a copy of the left-hand side of the result-set expression.
 ** Table-name and function resolution occurs on the substituted expression
 ** tree.  For example, in:
+** 为了解析结果集中的引用,查找表达式节点Z,如果Z匹配select结果集中as语句的定义,
+** 替换掉Z
 **
 **      SELECT a+b AS x, c+d AS y FROM t1 ORDER BY x;
 **
 ** The "x" term of the order by is replaced by "a+b" to render:
+** x被替换为a+b
 **
 **      SELECT a+b AS x, c+d AS y FROM t1 ORDER BY a+b;
 **
@@ -1356,12 +1380,18 @@ static int resolveSelectStep(Walker *pWalker, Select *p)
 ** set and the opcode is changed from TK_FUNCTION to TK_AGG_FUNCTION.
 ** If an expression contains aggregate functions then the EP_Agg
 ** property on the expression is set.
+** 检查函数调用,保证函数被定义,并且参数个数正确,如果函数为聚集函数,打上NC_HasAgg标记
+** 操作码从TK_FUNCTION变为TK_AGG_FUNCTION,如果表达式包含聚集函数,表达式设置EP_Agg
+** 参数.
 **
 ** An error message is left in pParse if anything is amiss.  The number
 ** if errors is returned.
+** 如上所述,这个文件中的所有函数就是在做分析,确定到底要操作哪些column.
 */
 int sqlite3ResolveExprNames(
+    /* 名称上下文 */
     NameContext *pNC,       /* Namespace to resolve expressions in. */
+    /* 待分析的表达式 */
     Expr *pExpr             /* The expression to be analyzed. */
 )
 {

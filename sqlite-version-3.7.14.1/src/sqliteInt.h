@@ -1156,6 +1156,8 @@ struct Column
 ** A "Collating Sequence" is defined by an instance of the following
 ** structure. Conceptually, a collating sequence consists of a name and
 ** a comparison routine that defines the order of that sequence.
+** Collationg Sequence的定义如下,collating sequence包含一个名字以及比较函数,用于
+** 确定sequence的顺序.
 **
 ** There may two separate implementations of the collation function, one
 ** that processes text in UTF-8 encoding (CollSeq.xCmp) and another that
@@ -1163,6 +1165,9 @@ struct Column
 ** native byte order. When a collation sequence is invoked, SQLite selects
 ** the version that will require the least expensive encoding
 ** translations, if any.
+** collationg function可能有两种单独的实现,一个处理UTF-8编码的文本(CollSeq.xCmp),
+** 另外一个处理UTF-16编码的文本, 使用机器本地字节序,当一个collation sequence被调用,
+** SQLite选择开销最小的处理函数.
 **
 ** The CollSeq.pUser member variable is an extra parameter that passed in
 ** as the first argument to the UTF-8 comparison function, xCmp.
@@ -1280,13 +1285,16 @@ struct VTable
 /*
 ** Each SQL table is represented in memory by an instance of the
 ** following structure.
+** 每一个SQL表在内存中,都被表示为以下结构的一个实例.
 **
 ** Table.zName is the name of the table.  The case of the original
 ** CREATE TABLE statement is stored, but case is not significant for
 ** comparisons.
+** Table.zName是table的名称,原来的CREATE TABLE语句被存储了下来,
 **
 ** Table.nCol is the number of columns in this table.  Table.aCol is a
 ** pointer to an array of Column structures, one for each column.
+** Table.nCol是表中列的数量,Table.aCol是Column结构体的指针,每一个都代表一列.
 **
 ** If the table has an INTEGER PRIMARY KEY, then Table.iPKey is the index of
 ** the column that is that key.   Otherwise Table.iPKey is negative.  Note
@@ -1295,6 +1303,9 @@ struct VTable
 ** the table.  If a table has no INTEGER PRIMARY KEY, then a random rowid
 ** is generated for each row of the table.  TF_HasPrimaryKey is set if
 ** the table has any PRIMARY KEY, INTEGER or otherwise.
+** 如果表有INTEGER PRIMARY KEY, 那么Table.iPKey是key的索引值.否则iPKey是一个负数.只有主键(PRIMARY KEY)
+** 是整数,该字段才会被设置,一个整数类型的主键被用作表中每一行的rowid,如果一张表没有整数类型的主键,那么数据库将会为
+** 表中的每一行随机产生一个rowid,如果表有任意的主键,TF_HasPrimaryKey标记将会被设置上
 **
 ** Table.tnum is the page number for the root BTree page of the table in the
 ** database file.  If Table.iDb is the index of the database table backend
@@ -1306,6 +1317,10 @@ struct VTable
 ** page number.  Transient tables are used to hold the results of a
 ** sub-query that appears instead of a real table name in the FROM clause
 ** of a SELECT statement.
+** Table.tnum是数据库文件中,该表root page的页号.Table.iDb是下标值,sqlite.aDb[]数组的下标值.
+** 如果TF_Ephemeral标记被设定,存储到文件中的表将会被删除,当指向表的VDBE游标被关闭的时候.
+** 在这种情况下,Table.tnum存储的是VDBE游标的索引,而不是root page号.
+** 持久化的表被用来保存子查询的结果.
 */
 struct Table
 {
@@ -1313,6 +1328,7 @@ struct Table
     int iPKey;           /* If not negative, use aCol[iPKey] as the primary key */
     int nCol;            /* Number of columns in this table */
     Column *aCol;        /* Information about each column */
+    /* 索引 */
     Index *pIndex;       /* List of SQL indexes on this table. */
     int tnum;            /* Root BTree node for this table (see note above) */
     tRowcnt nRowEst;     /* Estimated rows in table - from sqlite_stat1 table */
@@ -1488,10 +1504,12 @@ struct UnpackedRecord
 /*
 ** Each SQL index is represented in memory by an
 ** instance of the following structure.
+** 每一个SQL索引,在内存中的都表现为以下结构体的一个实例.
 **
 ** The columns of the table that are to be indexed are described
 ** by the aiColumn[] field of this structure.  For example, suppose
 ** we have the following table and index:
+** 表中被索引的列的描述在aiColumn[]数组中,举个例子:
 **
 **     CREATE TABLE Ex1(c1 int, c2 int, c3 text);
 **     CREATE INDEX Ex2 ON Ex1(c3,c1);
@@ -1503,6 +1521,8 @@ struct UnpackedRecord
 ** first column to be indexed (c3) has an index of 2 in Ex1.aCol[].
 ** The second column to be indexed (c1) has an index of 0 in
 ** Ex1.aCol[], hence Ex2.aiColumn[1]==0.
+** 在表Ex1中,nCol==3,因为表中有3列,在索引结构中,nColumn为2,因为索引建立在两个列上.
+** aiColumn的值为{2, 0}
 **
 ** The Index.onError field determines whether or not the indexed columns
 ** must be unique and what to do if they are not.  When Index.onError=OE_None,
@@ -1510,9 +1530,12 @@ struct UnpackedRecord
 ** and the value of Index.onError indicate the which conflict resolution
 ** algorithm to employ whenever an attempt is made to insert a non-unique
 ** element.
+** Index.onError字段决定,是否被索引的列要唯一,如果不是要怎么做.当Index.onError=OE_None,这意味着,这不是一个唯一的索引.
+** 否则,它就是一个唯一的索引.
 */
 struct Index
 {
+    /* 索引名称 */
     char *zName;     /* Name of this index */
     int *aiColumn;   /* Which columns are used by this index.  1st is 0 */
     tRowcnt *aiRowEst; /* Result of ANALYZE: Est. rows selected by each column */
@@ -1526,6 +1549,7 @@ struct Index
     int tnum;        /* Page containing root of this index in database file */
     u8 onError;      /* OE_Abort, OE_Ignore, OE_Replace, or OE_None */
     u8 autoIndex;    /* True if is automatically created (ex: by UNIQUE) */
+    /* 仅仅在==或者IN查询上使用此索引 */
     u8 bUnordered;   /* Use this index for == or IN queries only */
 #ifdef SQLITE_ENABLE_STAT3
     int nSample;             /* Number of elements in aSample[] */
@@ -1571,36 +1595,49 @@ struct Token
 /*
 ** An instance of this structure contains information needed to generate
 ** code for a SELECT that contains aggregate functions.
+** 此结构体的一个实例包含着生成聚集函数的相关信息.
 **
 ** If Expr.op==TK_AGG_COLUMN or TK_AGG_FUNCTION then Expr.pAggInfo is a
 ** pointer to this structure.  The Expr.iColumn field is the index in
 ** AggInfo.aCol[] or AggInfo.aFunc[] of information needed to generate
 ** code for that node.
+** 如果Expr.op==TK_AGG_COLUMN或者TK_AGG_FUNCTION,那么Expr.pAggInfo指向此结构体.
+**  Expr.iColumn字段是AggInfo.aCol[]或者AggInfo.aFunc[]数组中的下标.
 **
 ** AggInfo.pGroupBy and AggInfo.aFunc.pExpr point to fields within the
 ** original Select structure that describes the SELECT statement.  These
 ** fields do not need to be freed when deallocating the AggInfo structure.
+** AggInfo.pGroupBy以及AggInfo.aFunc.pExpr指向原来select结构中描述select语句的字段.
+** 在释放AggInfo结构体的时候,这些字段不要释放.
 */
 struct AggInfo
 {
+    /* 直接从源表中获取数据,而不是accumulator */
     u8 directMode;          /* Direct rendering mode means take data directly
                           ** from source tables rather than from accumulators */
+    /* 是否要使用排序索引,也就是临时表,如果为1,那就是要使用 */
     u8 useSortingIdx;       /* In direct mode, reference the sorting index rather
                           ** than the source table */
+    /* 排序索引,如果使用的话,此值是有效的 */
     int sortingIdx;         /* Cursor number of the sorting index */
     int sortingIdxPTab;     /* Cursor number of pseudo-table */
+    /* 用于排序的索引中列的个数 */
     int nSortingColumn;     /* Number of columns in the sorting index */
+    /* groupby表达式 */
     ExprList *pGroupBy;     /* The group by clause */
     struct AggInfo_col      /* For each column used in source tables */
     {
+        /* 源表 */
         Table *pTab;             /* Source table */
         int iTable;              /* Cursor number of the source table */
         int iColumn;             /* Column number within the source table */
+        /* 此列是排序索引中的第iSorterColumn列 */
         int iSorterColumn;       /* Column number in the sorting index */
         int iMem;                /* Memory location that acts as accumulator */
         Expr *pExpr;             /* The original expression */
-    } *aCol;
+    } *aCol; /* 在源表汇总使用了的列 */
     int nColumn;            /* Number of used entries in aCol[] */
+    /* 输出结果集中显示的列的个数 */
     int nAccumulator;       /* Number of columns that show through to the output.
                           ** Additional columns are used only as parameters to
                           ** aggregate functions */
@@ -1729,6 +1766,7 @@ struct Expr
     ynVar iColumn;         /* TK_COLUMN: column index.  -1 for rowid.
                          ** TK_VARIABLE: variable number (always >= 1). */
     i16 iAgg;              /* Which entry in pAggInfo->aCol[] or ->aFunc[] */
+    /* join右侧的表 */
     i16 iRightJoinTable;   /* If EP_FromJoin, the right table of the join */
     u8 flags2;             /* Second set of flags.  EP2_... */
     u8 op2;                /* TK_REGISTER: original value of Expr.op
@@ -1743,6 +1781,7 @@ struct Expr
 
 /*
 ** The following are the meanings of bits in the Expr.flags field.
+** 以下的bit,用于Expr.flags字段
 */
 #define EP_FromJoin   0x0001  /* Originated in ON or USING clause of a join */
 #define EP_Agg        0x0002  /* Contains one or more aggregate functions */
@@ -1899,6 +1938,7 @@ typedef u64 Bitmask;
 */
 struct SrcList
 {
+    /* from语句中表或者子查询的数量 */
     i16 nSrc;        /* Number of tables or subqueries in the FROM clause */
     i16 nAlloc;      /* Number of entries allocated in a[] below */
     struct SrcList_item
@@ -1916,6 +1956,7 @@ struct SrcList
 #ifndef SQLITE_OMIT_EXPLAIN
         u8 iSelectId;     /* If pSelect!=0, the id of the sub-select in EQP */
 #endif
+        /* 用来访问表的游标 */
         int iCursor;      /* The VDBE cursor number used to access this table */
         Expr *pOn;        /* The ON clause of a join */
         IdList *pUsing;   /* The USING clause of a join */
@@ -1969,6 +2010,7 @@ struct WherePlan
 ** structure contains a single instance of this structure.  This structure
 ** is intended to be private to the where.c module and should not be
 ** access or modified by other modules.
+** 在where实现的每一层嵌套的循环,WhereInfo结构体包含单个这个结构体的实例.
 **
 ** The pIdxInfo field is used to help pick the best index on a
 ** virtual table.  The pIdxInfo pointer contains indexing
@@ -1976,13 +2018,18 @@ struct WherePlan
 ** All the pIdxInfo pointers are freed by whereInfoFree() in where.c.
 ** All other information in the i-th WhereLevel object for the i-th table
 ** after FROM clause ordering.
+** pIdxInfo字段用于帮助挑选最优的索引
 */
 struct WhereLevel
 {
     WherePlan plan;       /* query plan for this element of the FROM clause */
+    /* 用于实现left outer join的寄存器? */
     int iLeftJoin;        /* Memory cell used to implement LEFT OUTER JOIN */
+    /* 访问table使用的游标 */
     int iTabCur;          /* The VDBE cursor used to access the table */
+    /* 访问索引使用的游标 */
     int iIdxCur;          /* The VDBE cursor used to access pIdx */
+    /* 跳出循环 */
     int addrBrk;          /* Jump here to break out of the loop */
     int addrNxt;          /* Jump here to start the next IN combination */
     int addrCont;         /* Jump here to continue with the next loop cycle */
@@ -2044,8 +2091,11 @@ struct WhereInfo
     SrcList *pTabList;             /* List of tables in the join */
     int iTop;                      /* The very beginning of the WHERE loop */
     int iContinue;                 /* Jump here to continue with next record */
+    /* 用于跳出循环 */
     int iBreak;                    /* Jump here to break out of the loop */
+    /* 嵌套的循环的个数 */
     int nLevel;                    /* Number of nested loop */
+    /* where语句的分解 */
     struct WhereClause *pWC;       /* Decomposition of the WHERE clause */
     double savedNQueryLoop;        /* pParse->nQueryLoop outside the WHERE loop */
     double nRowOut;                /* Estimated number of output rows */
@@ -2182,12 +2232,15 @@ struct Select
 ** comments above sqlite3Select() for details.
 */
 typedef struct SelectDest SelectDest;
+/* 此结构体主要用于记录,我们要怎么处理select出来的结果 */
 struct SelectDest
 {
     u8 eDest;         /* How to dispose of the results */
     u8 affSdst;       /* Affinity used when eDest==SRT_Set */
     int iSDParm;      /* A parameter used by the eDest disposal method */
+    /* 基址寄存器 */
     int iSdst;        /* Base register where results are written */
+    /* 分配的寄存器的个数 */
     int nSdst;        /* Number of registers allocated */
 };
 

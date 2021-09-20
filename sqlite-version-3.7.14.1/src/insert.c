@@ -11,16 +11,21 @@
 *************************************************************************
 ** This file contains C code routines that are called by the parser
 ** to handle INSERT statements in SQLite.
+** 此文件包含了被parser调用的c代码,用于处理插入语句.
 */
 #include "sqliteInt.h"
 
 /*
 ** Generate code that will open a table for reading.
+** 为打开一个table生成代码
 */
 void sqlite3OpenTable(
     Parse *p,       /* Generate code into this VDBE */
+    /* 游标值 */
     int iCur,       /* The cursor number of the table */
+    /* db的索引值 */
     int iDb,        /* The database index in sqlite3.aDb[] */
+    /* 需要打开的table */
     Table *pTab,    /* The table to be opened */
     int opcode      /* OP_OpenRead or OP_OpenWrite */
 )
@@ -30,7 +35,9 @@ void sqlite3OpenTable(
     v = sqlite3GetVdbe(p);
     assert(opcode == OP_OpenWrite || opcode == OP_OpenRead);
     sqlite3TableLock(p, iDb, pTab->tnum, (opcode == OP_OpenWrite) ? 1 : 0, pTab->zName);
+    /* 打开表 */
     sqlite3VdbeAddOp3(v, opcode, iCur, pTab->tnum, iDb);
+    /* P4用于指定列的个数 */
     sqlite3VdbeChangeP4(v, -1, SQLITE_INT_TO_PTR(pTab->nCol), P4_INT32);
     VdbeComment((v, "%s", pTab->zName));
 }
@@ -39,6 +46,7 @@ void sqlite3OpenTable(
 ** Return a pointer to the column affinity string associated with index
 ** pIdx. A column affinity string has one character for each column in
 ** the table, according to the affinity of the column:
+** 返回一个指向列近似类型的string,此列和索引pIdx关联
 **
 **  Character      Column affinity
 **  ------------------------------
@@ -50,10 +58,12 @@ void sqlite3OpenTable(
 **
 ** An extra 'd' is appended to the end of the string to cover the
 ** rowid that appears as the last column in every index.
+** 一个额外的'd'将会添加在string的尾部,来包含出现在每个索引的最后一列的rowid
 **
 ** Memory for the buffer containing the column index affinity string
 ** is managed along with the rest of the Index structure. It will be
 ** released when sqlite3DeleteIndex() is called.
+**
 */
 const char *sqlite3IndexAffinityStr(Vdbe *v, Index *pIdx)
 {
@@ -68,7 +78,7 @@ const char *sqlite3IndexAffinityStr(Vdbe *v, Index *pIdx)
         ** up.
         */
         int n;
-        Table *pTab = pIdx->pTable;
+        Table *pTab = pIdx->pTable; /* 表 */
         sqlite3 *db = sqlite3VdbeDb(v);
         pIdx->zColAff = (char *)sqlite3DbMallocRaw(0, pIdx->nColumn + 2);
         if (!pIdx->zColAff)
@@ -76,7 +86,7 @@ const char *sqlite3IndexAffinityStr(Vdbe *v, Index *pIdx)
             db->mallocFailed = 1;
             return 0;
         }
-        for (n = 0; n < pIdx->nColumn; n++)
+        for (n = 0; n < pIdx->nColumn; n++) /* 被索引的每一个列都要遍历 */
         {
             pIdx->zColAff[n] = pTab->aCol[pIdx->aiColumn[n]].affinity;
         }
@@ -100,6 +110,7 @@ const char *sqlite3IndexAffinityStr(Vdbe *v, Index *pIdx)
 **  'c'            NUMERIC
 **  'd'            INTEGER
 **  'e'            REAL
+** 将最近插入的指令的P4参数设置为affinity string.
 */
 void sqlite3TableAffinityStr(Vdbe *v, Table *pTab)
 {
@@ -131,7 +142,7 @@ void sqlite3TableAffinityStr(Vdbe *v, Table *pTab)
 
         pTab->zColAff = zColAff;
     }
-
+    /* 更改P4的参数 */
     sqlite3VdbeChangeP4(v, -1, pTab->zColAff, P4_TRANSIENT);
 }
 
@@ -155,7 +166,7 @@ static int readsTable(Parse *p, int iStartAddr, int iDb, Table *pTab)
     {
         VdbeOp *pOp = sqlite3VdbeGetOp(v, i);
         assert(pOp != 0);
-        if (pOp->opcode == OP_OpenRead && pOp->p3 == iDb)
+        if (pOp->opcode == OP_OpenRead && pOp->p3 == iDb) /* 数据库已经打开 */
         {
             Index *pIndex;
             int tnum = pOp->p2;
@@ -188,12 +199,14 @@ static int readsTable(Parse *p, int iStartAddr, int iDb, Table *pTab)
 ** Locate or create an AutoincInfo structure associated with table pTab
 ** which is in database iDb.  Return the register number for the register
 ** that holds the maximum rowid.
+** 创建一个AutoincInfo结构体,返回包含了maximum rowid的寄存器号,
 **
 ** There is at most one AutoincInfo structure per table even if the
 ** same table is autoincremented multiple times due to inserts within
 ** triggers.  A new AutoincInfo structure is created if this is the
 ** first use of table pTab.  On 2nd and subsequent uses, the original
 ** AutoincInfo structure is used.
+** 一张表至多只有一个AutoincInfo结构体.
 **
 ** Three memory locations are allocated:
 **
@@ -211,7 +224,7 @@ static int autoIncBegin(
 )
 {
     int memId = 0;      /* Register holding maximum rowid */
-    if (pTab->tabFlags & TF_Autoincrement)
+    if (pTab->tabFlags & TF_Autoincrement) /* 表自增 */
     {
         Parse *pToplevel = sqlite3ParseToplevel(pParse);
         AutoincInfo *pInfo;
@@ -226,7 +239,7 @@ static int autoIncBegin(
             pInfo = sqlite3DbMallocRaw(pParse->db, sizeof(*pInfo));
             if (pInfo == 0) return 0;
             pInfo->pNext = pToplevel->pAinc;
-            pToplevel->pAinc = pInfo;
+            pToplevel->pAinc = pInfo;  /* 插入链表 */
             pInfo->pTab = pTab;
             pInfo->iDb = iDb;
             pToplevel->nMem++;                  /* Register to hold name of table */
@@ -241,6 +254,7 @@ static int autoIncBegin(
 /*
 ** This routine generates code that will initialize all of the
 ** register used by the autoincrement tracker.
+**
 */
 void sqlite3AutoincrementBegin(Parse *pParse)
 {
@@ -261,19 +275,27 @@ void sqlite3AutoincrementBegin(Parse *pParse)
     {
         pDb = &db->aDb[p->iDb];
         memId = p->regCtr;
+        /* 有一些参数可能要之后才能填充回来 */
         assert(sqlite3SchemaMutexHeld(db, 0, pDb->pSchema));
+        /* 打开表 */
         sqlite3OpenTable(pParse, 0, p->iDb, pDb->pSchema->pSeqTab, OP_OpenRead);
+        /* 在memId, memId+1指向的寄存器清空 */
         sqlite3VdbeAddOp3(v, OP_Null, 0, memId, memId + 1);
-        addr = sqlite3VdbeCurrentAddr(v);
+        addr = sqlite3VdbeCurrentAddr(v); /* 下一条指令的位置 */
+        /* 将p->pTab->zName放入寄存器memId - 1 */
         sqlite3VdbeAddOp4(v, OP_String8, 0, memId - 1, 0, p->pTab->zName, 0);
-        sqlite3VdbeAddOp2(v, OP_Rewind, 0, addr + 9);
+        /*  */
+        sqlite3VdbeAddOp2(v, OP_Rewind, 0, addr + 9); /* addr+9恰好跳出了此代码生成的指令 */
+        /* 将值放入memId寄存器 */
         sqlite3VdbeAddOp3(v, OP_Column, 0, 0, memId);
         sqlite3VdbeAddOp3(v, OP_Ne, memId - 1, addr + 7, memId);
         sqlite3VdbeChangeP5(v, SQLITE_JUMPIFNULL);
+        /* 填入一个整数到memId + 1的寄存器中 */
         sqlite3VdbeAddOp2(v, OP_Rowid, 0, memId + 1);
         sqlite3VdbeAddOp3(v, OP_Column, 0, 1, memId);
         sqlite3VdbeAddOp2(v, OP_Goto, 0, addr + 9);
         sqlite3VdbeAddOp2(v, OP_Next, 0, addr + 2);
+        /* Integer P1 P2  将P1写入memId寄存器 */
         sqlite3VdbeAddOp2(v, OP_Integer, 0, memId);
         sqlite3VdbeAddOp0(v, OP_Close);
     }
@@ -301,6 +323,7 @@ static void autoIncStep(Parse *pParse, int memId, int regRowid)
 ** Every statement that might do an INSERT into an autoincrement
 ** table (either directly or through triggers) needs to call this
 ** routine just before the "exit" code.
+** 代码生成,
 */
 void sqlite3AutoincrementEnd(Parse *pParse)
 {
@@ -359,6 +382,7 @@ static int xferOptimization(
 
 /*
 ** This routine is call to handle SQL of the following forms:
+** 此函数为下面形式的代码生成字节码:
 **
 **    insert into TABLE (IDLIST) values(EXPRLIST)
 **    insert into TABLE (IDLIST) select
@@ -376,11 +400,13 @@ static int xferOptimization(
 ** select with data coming from a VALUES clause, the code executes
 ** once straight down through.  Pseudo-code follows (we call this
 ** the "1st template"):
+** 代码生成遵循下面的4个模版中的一个
 **
 **         open write cursor to <table> and its indices
 **         puts VALUES clause expressions onto the stack
 **         write the resulting record into <table>
 **         cleanup
+**         对table打开一个游标, 将值放入stack, 将结果写回table,清理
 **
 ** The three remaining templates assume the statement is of the form
 **
@@ -394,38 +420,42 @@ static int xferOptimization(
 ** is invoked that copies raw records from <table2> over to <table1>.
 ** See the xferOptimization() function for the implementation of this
 ** template.  This is the 2nd template.
+** 如果select子句被限定了,只能是"select * from <table2>",
+** 换句话说,select将单张表中所有的列都查询了出来,并且没有where等子句来限定,
+** 如果table1和table2是不同的表,但是拥有相同的schema, 可以执行一个特殊的优化
 **
-**         open a write cursor to <table>
-**         open read cursor on <table2>
-**         transfer all records in <table2> over to <table>
-**         close cursors
-**         foreach index on <table>
-**           open a write cursor on the <table> index
-**           open a read cursor on the corresponding <table2> index
+**         open a write cursor to <table>   --在table上打开一个写游标
+**         open read cursor on <table2>     --在table2上打开一个读游标
+**         transfer all records in <table2> over to <table> --将table2中所有的记录都写入table
+**         close cursors                                    --关闭游标
+**         foreach index on <table>                         --遍历table中所有的索引
+**           open a write cursor on the <table> index       --在索引上打开一个写游标
+**           open a read cursor on the corresponding <table2> index --在table2上打开一个读游标
 **           transfer all records from the read to the write cursors
-**           close cursors
+**           close cursors --关闭游标
 **         end foreach
 **
 ** The 3rd template is for when the second template does not apply
 ** and the SELECT clause does not read from <table> at any time.
 ** The generated code follows this template:
+** 第三个模版应用于下面的情况: select语句并不能随时从table中取出数据(一次性将值取出来)
 **
-**         EOF <- 0
-**         X <- A
-**         goto B
+**         EOF <- 0  --将0写入EOF寄存器
+**         X <- A    --将A的地址写入X寄存器
+**         goto B    --跳转到B处执行
 **      A: setup for the SELECT
-**         loop over the rows in the SELECT
-**           load values into registers R..R+n
-**           yield X
+**         loop over the rows in the SELECT   --遍历select产生的所有row
+**           load values into registers R..R+n --将值存入从R...R+n寄存器
+**           yield X  --X寄存器的值和PC寄存器的值交换
 **         end loop
 **         cleanup after the SELECT
-**         EOF <- 1
+**         EOF <- 1   --将1写入寄存器EOF
 **         yield X
 **         goto A
-**      B: open write cursor to <table> and its indices
+**      B: open write cursor to <table> and its indices --打开table的游标和它的索引
 **      C: yield X
 **         if EOF goto D
-**         insert the select result into <table> from R..R+n
+**         insert the select result into <table> from R..R+n --将R...R+n的值作为一条记录插入table
 **         goto C
 **      D: cleanup
 **
@@ -434,28 +464,31 @@ static int xferOptimization(
 ** that is also read as part of the SELECT.  In the third form,
 ** we have to use a intermediate table to store the results of
 ** the select.  The template is like this:
+** 第四个模版用于这种情况:
+** insert语句从select子句中取值,但是数据被插入到一张表中,但是也被作为select的数据来源.
+** 在第三种形式中,我们要使用一个中间表来存储select语句产生的结果
 **
-**         EOF <- 0
-**         X <- A
-**         goto B
-**      A: setup for the SELECT
+**         EOF <- 0            -- 将0放入EOF寄存器
+**         X <- A              -- 将A的地址放入X寄存器,协程开始的地方
+**         goto B              -- 跳转到B处执行
+**      A: setup for the SELECT   --A这里实际是一个协程
 **         loop over the tables in the SELECT
 **           load value into register R..R+n
-**           yield X
+**           yield X           -- 从执行流中暂时返回,这里会将X寄存器的值和当前PC寄存器的值进行交换
 **         end loop
 **         cleanup after the SELECT
 **         EOF <- 1
 **         yield X
 **         halt-error
-**      B: open temp table
-**      L: yield X
-**         if EOF goto M
-**         insert row from R..R+n into temp table
-**         goto L
+**      B: open temp table -- 打开临时表
+**      L: yield X         -- 从协程中断的地方开始
+**         if EOF goto M   -- 如果EOF为1,跳转到M处执行
+**         insert row from R..R+n into temp table --插入临时表
+**         goto L          -- 跳转到L处继续执行
 **      M: open write cursor to <table> and its indices
 **         rewind temp table
 **      C: loop over rows of intermediate table
-**           transfer values form intermediate table into <table>
+**           transfer values form intermediate table into <table> --临时表作为中转表
 **         end loop
 **      D: cleanup
 */
@@ -518,7 +551,7 @@ void sqlite3Insert(
     assert(pTabList->nSrc == 1);
     zTab = pTabList->a[0].zName;
     if (NEVER(zTab == 0)) goto insert_cleanup;
-    pTab = sqlite3SrcListLookup(pParse, pTabList);
+    pTab = sqlite3SrcListLookup(pParse, pTabList); /* 定位要插入的表 */
     if (pTab == 0)
     {
         goto insert_cleanup;
@@ -594,6 +627,7 @@ void sqlite3Insert(
 
     /* If this is an AUTOINCREMENT table, look up the sequence number in the
     ** sqlite_sequence table and store it in memory cell regAutoinc.
+    ** 如果是一个自增表
     */
     regAutoinc = autoIncBegin(pParse, iDb, pTab);
 
@@ -601,6 +635,8 @@ void sqlite3Insert(
     ** is coming from a SELECT statement, then generate a co-routine that
     ** produces a single row of the SELECT on each invocation.  The
     ** co-routine is the common header to the 3rd and 4th templates.
+    ** 确定数据到底有多少列,如果数据来自于select语句,那么产生一个co-routine(协程),每次调用就产生一条记录.
+    ** 这个co-routine是第三和第四个模版的公共头部
     */
     if (pSelect)
     {
@@ -609,7 +645,7 @@ void sqlite3Insert(
         ** templates:
         **
         **         EOF <- 0
-        **         X <- A
+        **         X <- A   -- 将A处的地址放入X寄存器
         **         goto B
         **      A: setup for the SELECT
         **         loop over the tables in the SELECT
@@ -625,26 +661,33 @@ void sqlite3Insert(
         ** SELECT result into registers dest.iMem...dest.iMem+dest.nMem-1.
         ** (These output registers are allocated by sqlite3Select().)  When
         ** the SELECT completes, it sets the EOF flag stored in regEof.
+        ** 每次调用协程,它会放置select结果集中的一条记录到dst.iMem...dest.iMem+dest.nMem-1之中.
+        **
         */
         int rc, j1;
 
         regEof = ++pParse->nMem;
+        /* 将regEof指定的寄存器清空 */
         sqlite3VdbeAddOp2(v, OP_Integer, 0, regEof);      /* EOF <- 0 */
         VdbeComment((v, "SELECT eof flag"));
         sqlite3SelectDestInit(&dest, SRT_Coroutine, ++pParse->nMem);
         addrSelect = sqlite3VdbeCurrentAddr(v) + 2;
+        /* 将下一条指令的地址放入dest.iSDparm寄存器 */
         sqlite3VdbeAddOp2(v, OP_Integer, addrSelect - 1, dest.iSDParm);
         j1 = sqlite3VdbeAddOp2(v, OP_Goto, 0, 0);
         VdbeComment((v, "Jump over SELECT coroutine"));
 
         /* Resolve the expressions in the SELECT statement and execute it. */
+        /* select子句生成指令 */
         rc = sqlite3Select(pParse, pSelect, &dest);
         assert(pParse->nErr == 0 || rc);
         if (rc || NEVER(pParse->nErr) || db->mallocFailed)
         {
             goto insert_cleanup;
         }
+        /* regEof用于指示,select是否已经执行完成 */
         sqlite3VdbeAddOp2(v, OP_Integer, 1, regEof);         /* EOF <- 1 */
+        /* yield X 将X寄存器的值和PC寄存器的值进行交换 */
         sqlite3VdbeAddOp1(v, OP_Yield, dest.iSDParm);   /* yield X */
         sqlite3VdbeAddOp2(v, OP_Halt, SQLITE_INTERNAL, OE_Abort);
         VdbeComment((v, "End of SELECT coroutine"));
@@ -659,26 +702,29 @@ void sqlite3Insert(
         ** should be written into a temporary table (template 4).  Set to
         ** FALSE if each* row of the SELECT can be written directly into
         ** the destination table (template 3).
+        ** 如果select语句的结果需要写入临时表的话,将useTempTable设置为true.
         **
         ** A temp table must be used if the table being updated is also one
         ** of the tables being read by the SELECT statement.  Also use a
         ** temp table in the case of row triggers.
+        ** 如果一张表在更新的时候,也被select语句读,那么必须使用临时表.
         */
         if (pTrigger || readsTable(pParse, addrSelect, iDb, pTab))
         {
             useTempTable = 1;
         }
 
-        if (useTempTable)
+        if (useTempTable) /* 需要使用临时表 */
         {
             /* Invoke the coroutine to extract information from the SELECT
             ** and add it to a transient table srcTab.  The code generated
             ** here is from the 4th template:
+            ** 调用协程,来获取select结果集中的结果,并将其加入一个短暂的临时表中:
             **
             **      B: open temp table
-            **      L: yield X
-            **         if EOF goto M
-            **         insert row from R..R+n into temp table
+            **      L: yield X               -- 切换到协程去执行,其实就是获取一条记录
+            **         if EOF goto M         -- EOF的标记为1,跳转到M执行
+            **         insert row from R..R+n into temp table -- 插入一条记录
             **         goto L
             **      M: ...
             */
@@ -688,13 +734,19 @@ void sqlite3Insert(
             int addrIf;          /* Address of jump to M */
 
             srcTab = pParse->nTab++;
+            /* 分配一个临时的寄存器 */
             regRec = sqlite3GetTempReg(pParse);
             regTempRowid = sqlite3GetTempReg(pParse);
+            /* 创建一个临时表 */
             sqlite3VdbeAddOp2(v, OP_OpenEphemeral, srcTab, nColumn);
             addrTop = sqlite3VdbeAddOp1(v, OP_Yield, dest.iSDParm);
+            /* 判断regEOF的值 */
             addrIf = sqlite3VdbeAddOp1(v, OP_If, regEof);
+            /* 创建一条记录 */
             sqlite3VdbeAddOp3(v, OP_MakeRecord, regFromSelect, nColumn, regRec);
+            /* 生成rowid */
             sqlite3VdbeAddOp2(v, OP_NewRowid, srcTab, regTempRowid);
+            /* 插入 */
             sqlite3VdbeAddOp3(v, OP_Insert, srcTab, regRec, regTempRowid);
             sqlite3VdbeAddOp2(v, OP_Goto, 0, addrTop);
             sqlite3VdbeJumpHere(v, addrIf);
@@ -803,6 +855,7 @@ void sqlite3Insert(
     }
 
     /* Initialize the count of rows to be inserted
+    ** 构建一个计数器,用于统计一共插入了多少条记录
     */
     if (db->flags & SQLITE_CountRows)
     {
@@ -816,6 +869,7 @@ void sqlite3Insert(
         int nIdx;
 
         baseCur = pParse->nTab;
+        /* 打开表 */
         nIdx = sqlite3OpenTableAndIndices(pParse, pTab, baseCur, OP_OpenWrite);
         aRegIdx = sqlite3DbMallocRaw(db, sizeof(int) * (nIdx + 1));
         if (aRegIdx == 0)

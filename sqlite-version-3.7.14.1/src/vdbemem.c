@@ -1333,6 +1333,7 @@ void sqlite3ValueFree(sqlite3_value *v)
 /*
 ** Return the number of bytes in the sqlite3_value object assuming
 ** that it uses the encoding "enc"
+** 返回sqlite3_value的字节数,假定它使用特定的编码enc
 */
 int sqlite3ValueBytes(sqlite3_value *pVal, u8 enc)
 {

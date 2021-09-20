@@ -95,6 +95,7 @@ Expr *sqlite3ExprSetCollByToken(Parse *pParse, Expr *pExpr, Token *pCollName)
 /*
 ** Return the default collation sequence for the expression pExpr. If
 ** there is no default collation type, return 0.
+** 为表达式pExpr返回默认的collation sequence,如果没有,返回0
 */
 CollSeq *sqlite3ExprCollSeq(Parse *pParse, Expr *pExpr)
 {
@@ -176,6 +177,7 @@ char sqlite3CompareAffinity(Expr *pExpr, char aff2)
 /*
 ** pExpr is a comparison operator.  Return the type affinity that should
 ** be applied to both operands prior to doing the comparison.
+** pExpr是一个比较操作符,返回操作符的affinity
 */
 static char comparisonAffinity(Expr *pExpr)
 {
@@ -205,6 +207,7 @@ static char comparisonAffinity(Expr *pExpr)
 ** idx_affinity is the affinity of an indexed column. Return true
 ** if the index with affinity idx_affinity may be used to implement
 ** the comparison in pExpr.
+** pExpr是一个比较表达式,比如说=,<,IN(...)等,
 */
 int sqlite3IndexAffinityOk(Expr *pExpr, char idx_affinity)
 {
@@ -234,11 +237,13 @@ static u8 binaryCompareP5(Expr *pExpr1, Expr *pExpr2, int jumpIfNull)
 /*
 ** Return a pointer to the collation sequence that should be used by
 ** a binary comparison operator comparing pLeft and pRight.
+** 返回一个指向collation sequence的指针,用于pLeft以及pRight的二进制比较
 **
 ** If the left hand expression has a collating sequence type, then it is
 ** used. Otherwise the collation sequence for the right hand expression
 ** is used, or the default (BINARY) if neither expression has a collating
 ** type.
+** 左边的表达式有一个collating sequence类型,使用左侧的,否则如果右侧有,使用右侧,都没有,使用默认
 **
 ** Argument pRight (but not pLeft) may be a null pointer. In this case,
 ** it is not considered.
@@ -274,6 +279,7 @@ CollSeq *sqlite3BinaryCompareCollSeq(
 
 /*
 ** Generate code for a comparison operator.
+** 比较操作符生成代码
 */
 static int codeCompare(
     Parse *pParse,    /* The parsing (and code generating) context */
@@ -1634,13 +1640,16 @@ int sqlite3CodeOnce(Parse *pParse)
 ** It's job is to find or create a b-tree structure that may be used
 ** either to test for membership of the (...) set or to iterate through
 ** its members, skipping duplicates.
+** 此函数用于IN(...)操作符的实现,它的任务是,找到或者创建一个b-tree结构,可以用来测试(...)的
+** 成员,或者迭代它的成员,去重.
 **
 ** The index of the cursor opened on the b-tree (database table, database index
 ** or ephermal table) is stored in pX->iTable before this function returns.
 ** The returned value of this function indicates the b-tree type, as follows:
+** 游标对应的索引存储在pX->iTable之中,返回值指示了b-tree的类型:
 **
-**   IN_INDEX_ROWID - The cursor was opened on a database table.
-**   IN_INDEX_INDEX - The cursor was opened on a database index.
+**   IN_INDEX_ROWID - The cursor was opened on a database table. --在表上的游标
+**   IN_INDEX_INDEX - The cursor was opened on a database index. --在索引上的游标
 **   IN_INDEX_EPH -   The cursor was opened on a specially created and
 **                    populated epheremal table.
 **
@@ -1742,7 +1751,9 @@ int sqlite3FindInIndex(Parse *pParse, Expr *pX, int *prNotFound)
 
             /* The collation sequence used by the comparison. If an index is to
             ** be used in place of a temp-table, it must be ordered according
-            ** to this collation sequence.  */
+            ** to this collation sequence.
+            ** 将collation sequence用于比较操作,如果一个索引将要被放入temp-table,那么它要按照collation sequence的顺序
+            */
             CollSeq *pReq = sqlite3BinaryCompareCollSeq(pParse, pX->pLeft, pExpr);
 
             /* Check that the affinity that will be used to perform the
@@ -2079,6 +2090,7 @@ int sqlite3CodeSubselect(
 #ifndef SQLITE_OMIT_SUBQUERY
 /*
 ** Generate code for an IN expression.
+** 为IN表达式生成代码
 **
 **      x IN (SELECT ...)
 **      x IN (value, value, ...)
@@ -2088,6 +2100,7 @@ int sqlite3CodeSubselect(
 ** contained within the RHS.  The value of the expression is unknown (NULL)
 ** if the LHS is NULL or if the LHS is not contained within the RHS and the
 ** RHS contains one or more NULL values.
+** 左侧是一个标量(scalar expression),右侧是由值构成的数组.如果左操作数在右操作数之中,表达式为true
 **
 ** This routine generates code will jump to destIfFalse if the LHS is not
 ** contained within the RHS.  If due to NULLs we cannot determine if the LHS
@@ -2125,15 +2138,17 @@ static void sqlite3ExprCodeIN(
     */
     sqlite3ExprCachePush(pParse);
     r1 = sqlite3GetTempReg(pParse);
-    sqlite3ExprCode(pParse, pExpr->pLeft, r1);
+    sqlite3ExprCode(pParse, pExpr->pLeft, r1); /*   左操作数   */
 
     /* If the LHS is NULL, then the result is either false or NULL depending
     ** on whether the RHS is empty or not, respectively.
+    ** 如果左操作数为NULL,那么结果要么为false要么为NULL,取决于右操作数是否为空
     */
     if (destIfNull == destIfFalse)
     {
         /* Shortcut for the common case where the false and NULL outcomes are
         ** the same. */
+        /* 如果左操作数为NULL,跳转到destIfNull */
         sqlite3VdbeAddOp2(v, OP_IsNull, r1, destIfNull);
     }
     else
@@ -2149,11 +2164,13 @@ static void sqlite3ExprCodeIN(
         /* In this case, the RHS is the ROWID of table b-tree
         */
         sqlite3VdbeAddOp2(v, OP_MustBeInt, r1, destIfFalse);
+        /* 判断r1的值是否存在于iTable指向的表中 */
         sqlite3VdbeAddOp3(v, OP_NotExists, pExpr->iTable, destIfFalse, r1);
     }
     else
     {
         /* In this case, the RHS is an index b-tree.
+        ** 右操作数是一个b-tree索引
         */
         sqlite3VdbeAddOp4(v, OP_Affinity, r1, 1, 0, &affinity, 1);
 
@@ -2272,6 +2289,7 @@ static void codeInteger(Parse *pParse, Expr *pExpr, int negFlag, int iMem)
         int i = pExpr->u.iValue;
         assert(i >= 0);
         if (negFlag) i = -i;
+        /* 将值加载至寄存器iMem */
         sqlite3VdbeAddOp2(v, OP_Integer, i, iMem);
     }
     else
@@ -2321,6 +2339,9 @@ static void cacheEntryClear(Parse *pParse, struct yColCache *p)
 /*
 ** Record in the column cache that a particular column from a
 ** particular table is stored in a particular register.
+** @param iTab 表
+** @param iCol 列
+** @param iReg 寄存器
 */
 void sqlite3ExprCacheStore(Parse *pParse, int iTab, int iCol, int iReg)
 {
@@ -2350,7 +2371,9 @@ void sqlite3ExprCacheStore(Parse *pParse, int iTab, int iCol, int iReg)
     }
 #endif
 
-    /* Find an empty slot and replace it */
+    /* Find an empty slot and replace it
+     * 找到一个空闲的slot
+     */
     for (i = 0, p = pParse->aColCache; i < SQLITE_N_COLCACHE; i++, p++)
     {
         if (p->iReg == 0)
@@ -2365,7 +2388,9 @@ void sqlite3ExprCacheStore(Parse *pParse, int iTab, int iCol, int iReg)
         }
     }
 
-    /* Replace the last recently used */
+    /* Replace the last recently used
+    ** 替换掉最近最少使用的那一个
+    */
     minLru = 0x7fffffff;
     idxLru = -1;
     for (i = 0, p = pParse->aColCache; i < SQLITE_N_COLCACHE; i++, p++)
@@ -2462,6 +2487,7 @@ static void sqlite3ExprCachePinRegister(Parse *pParse, int iReg)
 
 /*
 ** Generate code to extract the value of the iCol-th column of a table.
+** 抽取出表中第iCol-th列的值
 */
 void sqlite3ExprCodeGetColumnOfTable(
     Vdbe *v,        /* The VDBE under construction */
@@ -2473,11 +2499,13 @@ void sqlite3ExprCodeGetColumnOfTable(
 {
     if (iCol < 0 || iCol == pTab->iPKey)
     {
+        /* -1代表rowid */
         sqlite3VdbeAddOp2(v, OP_Rowid, iTabCur, regOut);
     }
     else
     {
         int op = IsVirtual(pTab) ? OP_VColumn : OP_Column;
+        /* 记录中第iCol个字段的值,放入regOut寄存器 */
         sqlite3VdbeAddOp3(v, op, iTabCur, iCol, regOut);
     }
     if (iCol >= 0)
@@ -2491,6 +2519,7 @@ void sqlite3ExprCodeGetColumnOfTable(
 ** table pTab and store the column value in a register.  An effort
 ** is made to store the column value in register iReg, but this is
 ** not guaranteed.  The location of the column value is returned.
+** 从pTab这张表中抽取出iColumn-th列的值,将其存储在寄存器之中,我们努力将结果放入iReg寄存器,但是不保证.
 **
 ** There must be an open cursor to pTab in iTable when this routine
 ** is called.  If iColumn<0 then code is generated that extracts the rowid.
@@ -2498,7 +2527,9 @@ void sqlite3ExprCodeGetColumnOfTable(
 int sqlite3ExprCodeGetColumn(
     Parse *pParse,   /* Parsing and code generating context */
     Table *pTab,     /* Description of the table we are reading from */
+    /* 表中列的索引 */
     int iColumn,     /* Index of the table column */
+    /* 指向表的游标 */
     int iTable,      /* The cursor pointing to the table */
     int iReg,        /* Store results here */
     u8 p5            /* P5 value for OP_Column */
@@ -2507,7 +2538,7 @@ int sqlite3ExprCodeGetColumn(
     Vdbe *v = pParse->pVdbe;
     int i;
     struct yColCache *p;
-
+    /* 首先在缓存中寻找 */
     for (i = 0, p = pParse->aColCache; i < SQLITE_N_COLCACHE; i++, p++)
     {
         if (p->iReg > 0 && p->iTable == iTable && p->iColumn == iColumn)
@@ -2580,6 +2611,7 @@ void sqlite3ExprCodeMove(Parse *pParse, int iFrom, int iTo, int nReg)
 /*
 ** Generate code to copy content from registers iFrom...iFrom+nReg-1
 ** over to iTo..iTo+nReg-1.
+** 从iFrom寄存器到iFrom+nReg-1寄存器的内容拷贝到iTo到iTo+nReg-1寄存器
 */
 void sqlite3ExprCodeCopy(Parse *pParse, int iFrom, int iTo, int nReg)
 {
@@ -2616,12 +2648,15 @@ static int usedAsColumnCache(Parse *pParse, int iFrom, int iTo)
 ** Generate code into the current Vdbe to evaluate the given
 ** expression.  Attempt to store the results in register "target".
 ** Return the register where results are stored.
+** 为vdbe计算当前的表达式生成代码,将结果存储在寄存器"target"之中,返回结果所存放的寄存器
 **
 ** With this routine, there is no guarantee that results will
 ** be stored in target.  The result might be stored in some other
 ** register if it is convenient to do so.  The calling function
 ** must check the return code and move the results to the desired
 ** register.
+** 此函数,不保证结果将会被放入target之中,结果可能会被放入其他寄存器,怎么方便怎么来.
+** 调用者需要检查返回结果,并且将结果移动到想要的寄存器
 */
 int sqlite3ExprCodeTarget(Parse *pParse, Expr *pExpr, int target)
 {
@@ -2650,7 +2685,7 @@ int sqlite3ExprCodeTarget(Parse *pParse, Expr *pExpr, int target)
     }
     switch (op)
     {
-        case TK_AGG_COLUMN:
+        case TK_AGG_COLUMN: /* 聚集函数 */
         {
             AggInfo *pAggInfo = pExpr->pAggInfo;
             struct AggInfo_col *pCol = &pAggInfo->aCol[pExpr->iAgg];
@@ -2684,7 +2719,7 @@ int sqlite3ExprCodeTarget(Parse *pParse, Expr *pExpr, int target)
             }
             break;
         }
-        case TK_INTEGER:
+        case TK_INTEGER: /* 表达式是一个整数值 */
         {
             codeInteger(pParse, pExpr, 0, target);
             break;
@@ -2697,7 +2732,7 @@ int sqlite3ExprCodeTarget(Parse *pParse, Expr *pExpr, int target)
             break;
         }
 #endif
-        case TK_STRING:
+        case TK_STRING: /* 加载字符 */
         {
             assert(!ExprHasProperty(pExpr, EP_IntValue));
             sqlite3VdbeAddOp4(v, OP_String8, 0, target, 0, pExpr->u.zToken, 0);
@@ -2798,10 +2833,10 @@ int sqlite3ExprCodeTarget(Parse *pParse, Expr *pExpr, int target)
             testcase(op == TK_GE);
             testcase(op == TK_EQ);
             testcase(op == TK_NE);
-            r1 = sqlite3ExprCodeTemp(pParse, pExpr->pLeft, &regFree1);
-            r2 = sqlite3ExprCodeTemp(pParse, pExpr->pRight, &regFree2);
+            r1 = sqlite3ExprCodeTemp(pParse, pExpr->pLeft, &regFree1); /* 左表达式 */
+            r2 = sqlite3ExprCodeTemp(pParse, pExpr->pRight, &regFree2); /* 右表达式 */
             codeCompare(pParse, pExpr->pLeft, pExpr->pRight, op,
-                        r1, r2, inReg, SQLITE_STOREP2);
+                        r1, r2, inReg, SQLITE_STOREP2); /* 代码生成 */
             testcase(regFree1 == 0);
             testcase(regFree2 == 0);
             break;
@@ -3328,6 +3363,7 @@ int sqlite3ExprCodeTarget(Parse *pParse, Expr *pExpr, int target)
 ** Generate code to evaluate an expression and store the results
 ** into a register.  Return the register number where the results
 ** are stored.
+** 计算表达式的值,并且将结果存储在寄存器中,返回结果所存放的寄存器号.
 **
 ** If the register is a temporary register that can be deallocated,
 ** then write its number into *pReg.  If the result register is not
@@ -3353,6 +3389,7 @@ int sqlite3ExprCodeTemp(Parse *pParse, Expr *pExpr, int *pReg)
 ** Generate code that will evaluate expression pExpr and store the
 ** results in register target.  The results are guaranteed to appear
 ** in register target.
+** 计算表达式pExpr的值,将结果存储在target寄存器中,
 */
 int sqlite3ExprCode(Parse *pParse, Expr *pExpr, int target)
 {
@@ -3369,6 +3406,7 @@ int sqlite3ExprCode(Parse *pParse, Expr *pExpr, int target)
         assert(pParse->pVdbe || pParse->db->mallocFailed);
         if (inReg != target && pParse->pVdbe)
         {
+            /* 将结果拷贝到target寄存器中 */
             sqlite3VdbeAddOp2(pParse->pVdbe, OP_SCopy, inReg, target);
         }
     }
@@ -3414,6 +3452,7 @@ int sqlite3ExprCodeAndCache(Parse *pParse, Expr *pExpr, int target)
 #if defined(SQLITE_ENABLE_TREE_EXPLAIN)
 /*
 ** Generate a human-readable explanation of an expression tree.
+** 打印表达式
 */
 void sqlite3ExplainExpr(Vdbe *pOut, Expr *pExpr)
 {
@@ -3436,7 +3475,7 @@ void sqlite3ExplainExpr(Vdbe *pOut, Expr *pExpr)
                                  pExpr->iTable, pExpr->iColumn);
             break;
         }
-        case TK_COLUMN:
+        case TK_COLUMN: /* 获取列的值 */
         {
             if (pExpr->iTable < 0)
             {
@@ -3450,7 +3489,7 @@ void sqlite3ExplainExpr(Vdbe *pOut, Expr *pExpr)
             }
             break;
         }
-        case TK_INTEGER:
+        case TK_INTEGER: /* 整数类型 */
         {
             if (pExpr->flags & EP_IntValue)
             {
@@ -3613,10 +3652,10 @@ void sqlite3ExplainExpr(Vdbe *pOut, Expr *pExpr)
 
         case TK_AGG_FUNCTION:
         case TK_CONST_FUNC:
-        case TK_FUNCTION:
+        case TK_FUNCTION: /* 聚集函数 */
         {
             ExprList *pFarg;       /* List of function arguments */
-            if (ExprHasAnyProperty(pExpr, EP_TokenOnly))
+            if (ExprHasAnyProperty(pExpr, EP_TokenOnly)) /* 没有参数 */
             {
                 pFarg = 0;
             }
@@ -3867,6 +3906,7 @@ static int isAppropriateForFactoring(Expr *p)
 ** factoring out of a loop, then evaluate the expression
 ** into a register and convert the expression into a TK_REGISTER
 ** expression.
+** 如果pExpr是一个常量表达式,适合从循环中分解出来,将表达式的值放入一个寄存器,将表达式转换为TK_REGISTER表达式
 */
 static int evalConstExpr(Walker *pWalker, Expr *pExpr)
 {
@@ -3918,6 +3958,8 @@ static int evalConstExpr(Walker *pWalker, Expr *pExpr)
 ** Preevaluate constant subexpressions within pExpr and store the
 ** results in registers.  Modify pExpr so that the constant subexpresions
 ** are TK_REGISTER opcodes that refer to the precomputed values.
+** 提前计算再pExpr中的常量子表达式,将结果放入寄存器中,修改pExpr的值,使得常量子表达式
+** 可以通过TK_REGISTER操作符引用.
 **
 ** This routine is a no-op if the jump to the cookie-check code has
 ** already occur.  Since the cookie-check jump is generated prior to
@@ -3929,6 +3971,7 @@ static int evalConstExpr(Walker *pWalker, Expr *pExpr)
 ** interface.  This allows test logic to verify that the same answer is
 ** obtained for queries regardless of whether or not constants are
 ** precomputed into registers or if they are inserted in-line.
+** 首先为常量表达式生成代码
 */
 void sqlite3ExprCodeConstants(Parse *pParse, Expr *pExpr)
 {
@@ -3945,11 +3988,13 @@ void sqlite3ExprCodeConstants(Parse *pParse, Expr *pExpr)
 /*
 ** Generate code that pushes the value of every element of the given
 ** expression list into a sequence of registers beginning at target.
+** 将给定表达式列表的每个元素的值压入一系列的寄存器数组,数组起始target
 **
 ** Return the number of elements evaluated.
 */
 int sqlite3ExprCodeExprList(
     Parse *pParse,     /* Parsing context */
+    /* 需要编码的表达式列表 */
     ExprList *pList,   /* The expression list to be coded */
     int target,        /* Where to write results */
     int doHardCopy     /* Make a hard copy of every element */
@@ -3964,6 +4009,7 @@ int sqlite3ExprCodeExprList(
     for (pItem = pList->a, i = 0; i < n; i++, pItem++)
     {
         Expr *pExpr = pItem->pExpr;
+        /* 每一个表达式生成对应的值,将结果放入target+i寄存器 */
         int inReg = sqlite3ExprCodeTarget(pParse, pExpr, target + i);
         if (inReg != target + i)
         {
@@ -4514,6 +4560,7 @@ static int addAggInfoFunc(sqlite3 *db, AggInfo *pInfo)
 ** This is the xExprCallback for a tree walker.  It is used to
 ** implement sqlite3ExprAnalyzeAggregates().  See sqlite3ExprAnalyzeAggregates
 ** for additional information.
+** @param pExpr 待分析的表达式
 */
 static int analyzeAggregate(Walker *pWalker, Expr *pExpr)
 {
@@ -4526,16 +4573,18 @@ static int analyzeAggregate(Walker *pWalker, Expr *pExpr)
     switch (pExpr->op)
     {
         case TK_AGG_COLUMN:
-        case TK_COLUMN:
+        case TK_COLUMN: /* 获取某一列的值 */
         {
             testcase(pExpr->op == TK_AGG_COLUMN);
             testcase(pExpr->op == TK_COLUMN);
             /* Check to see if the column is in one of the tables in the FROM
-            ** clause of the aggregate query */
+            ** clause of the aggregate query
+            ** 检查列是否存在于from语句的表中
+            */
             if (ALWAYS(pSrcList != 0))
             {
-                struct SrcList_item *pItem = pSrcList->a;
-                for (i = 0; i < pSrcList->nSrc; i++, pItem++)
+                struct SrcList_item *pItem = pSrcList->a; /* 表 */
+                for (i = 0; i < pSrcList->nSrc; i++, pItem++) /* 遍历来源表 */
                 {
                     struct AggInfo_col *pCol;
                     assert(!ExprHasAnyProperty(pExpr, EP_TokenOnly | EP_Reduced));
@@ -4543,6 +4592,7 @@ static int analyzeAggregate(Walker *pWalker, Expr *pExpr)
                     {
                         /* If we reach this point, it means that pExpr refers to a table
                         ** that is in the FROM clause of the aggregate query.
+                        ** 运行到这里,说明pExpr引用了from语句中的表
                         **
                         ** Make an entry for the column in pAggInfo->aCol[] if there
                         ** is not an entry there already.
@@ -4554,10 +4604,10 @@ static int analyzeAggregate(Walker *pWalker, Expr *pExpr)
                             if (pCol->iTable == pExpr->iTable &&
                                 pCol->iColumn == pExpr->iColumn)
                             {
-                                break;
+                                break; /* 到这里表示已经存在于aCol数组中 */
                             }
                         }
-                        if ((k >= pAggInfo->nColumn)
+                        if ((k >= pAggInfo->nColumn) /* aCol数组中不存在 */
                             && (k = addAggInfoColumn(pParse->db, pAggInfo)) >= 0
                            )
                         {
@@ -4568,7 +4618,8 @@ static int analyzeAggregate(Walker *pWalker, Expr *pExpr)
                             pCol->iMem = ++pParse->nMem;
                             pCol->iSorterColumn = -1;
                             pCol->pExpr = pExpr;
-                            if (pAggInfo->pGroupBy)
+                            /* 总之,排序顺序是,先按照group by中列的顺序,其余的再按照列在aCol中的次序排 */
+                            if (pAggInfo->pGroupBy) /* 如果存在group by限定 */
                             {
                                 int j, n;
                                 ExprList *pGB = pAggInfo->pGroupBy;
@@ -4576,18 +4627,18 @@ static int analyzeAggregate(Walker *pWalker, Expr *pExpr)
                                 n = pGB->nExpr;
                                 for (j = 0; j < n; j++, pTerm++)
                                 {
-                                    Expr *pE = pTerm->pExpr;
+                                    Expr *pE = pTerm->pExpr; /* 遍历group by子句中的列 */
                                     if (pE->op == TK_COLUMN && pE->iTable == pExpr->iTable &&
                                         pE->iColumn == pExpr->iColumn)
                                     {
-                                        pCol->iSorterColumn = j;
+                                        pCol->iSorterColumn = j; /* j是此列在group by中的次序 */
                                         break;
                                     }
                                 }
                             }
-                            if (pCol->iSorterColumn < 0)
+                            if (pCol->iSorterColumn < 0) /* 如果此列不在group by之中 */
                             {
-                                pCol->iSorterColumn = pAggInfo->nSortingColumn++;
+                                pCol->iSorterColumn = pAggInfo->nSortingColumn++; /*  */
                             }
                         }
                         /* There is now an entry for pExpr in pAggInfo->aCol[] (either
@@ -4605,7 +4656,7 @@ static int analyzeAggregate(Walker *pWalker, Expr *pExpr)
             }
             return WRC_Prune;
         }
-        case TK_AGG_FUNCTION:
+        case TK_AGG_FUNCTION: /* 聚集函数 */
         {
             if ((pNC->ncFlags & NC_InAggFunc) == 0
                 && pWalker->walkerDepth == pExpr->op2
@@ -4622,9 +4673,10 @@ static int analyzeAggregate(Walker *pWalker, Expr *pExpr)
                         break;
                     }
                 }
-                if (i >= pAggInfo->nFunc)
+                if (i >= pAggInfo->nFunc) /* 如果不存在,要将其加入aFunc数组 */
                 {
                     /* pExpr is original.  Make a new entry in pAggInfo->aFunc[]
+                    ** pExpr是唯一的,构建一个新的entry
                     */
                     u8 enc = ENC(pParse->db);
                     i = addAggInfoFunc(pParse->db, pAggInfo);
@@ -4652,7 +4704,7 @@ static int analyzeAggregate(Walker *pWalker, Expr *pExpr)
                 */
                 assert(!ExprHasAnyProperty(pExpr, EP_TokenOnly | EP_Reduced));
                 ExprSetIrreducible(pExpr);
-                pExpr->iAgg = (i16)i;
+                pExpr->iAgg = (i16)i; /* 记录下下标 */
                 pExpr->pAggInfo = pAggInfo;
             }
             return WRC_Prune;
@@ -4671,6 +4723,7 @@ static int analyzeAggregatesInSelect(Walker *pWalker, Select *pSelect)
 ** Analyze the given expression looking for aggregate functions and
 ** for variables that need to be added to the pParse->aAgg[] array.
 ** Make additional entries to the pParse->aAgg[] array as necessary.
+** 分析给定的expression, 查找聚集函数以及需要添加值pParse->aAgg[]数组中的变量
 **
 ** This routine should only be called after the expression has been
 ** analyzed by sqlite3ResolveExprNames().
@@ -4689,6 +4742,7 @@ void sqlite3ExprAnalyzeAggregates(NameContext *pNC, Expr *pExpr)
 /*
 ** Call sqlite3ExprAnalyzeAggregates() for every expression in an
 ** expression list.  Return the number of errors.
+** 为expression list中的每一个expression调用sqlite3AnalyzeAggregates()
 **
 ** If an error is found, the analysis is cut short.
 */
@@ -4698,7 +4752,7 @@ void sqlite3ExprAnalyzeAggList(NameContext *pNC, ExprList *pList)
     int i;
     if (pList)
     {
-        for (pItem = pList->a, i = 0; i < pList->nExpr; i++, pItem++)
+        for (pItem = pList->a, i = 0; i < pList->nExpr; i++, pItem++) /* 遍历表达式列表 */
         {
             sqlite3ExprAnalyzeAggregates(pNC, pItem->pExpr);
         }
@@ -4707,6 +4761,7 @@ void sqlite3ExprAnalyzeAggList(NameContext *pNC, ExprList *pList)
 
 /*
 ** Allocate a single new register for use to hold some intermediate result.
+** 分配一个临时寄存器
 */
 int sqlite3GetTempReg(Parse *pParse)
 {
@@ -4776,6 +4831,7 @@ void sqlite3ReleaseTempRange(Parse *pParse, int iReg, int nReg)
 
 /*
 ** Mark all temporary registers as being unavailable for reuse.
+** 将所有的临时寄存器标记为不可用
 */
 void sqlite3ClearTempRegCache(Parse *pParse)
 {
