@@ -2473,6 +2473,7 @@ parse_uri_out:
 ** is UTF-8 encoded.
 */
 static int openDatabase(
+    /* 数据库的名称 */
     const char *zFilename, /* Database filename UTF-8 encoded */
     sqlite3 **ppDb,        /* OUT: Returned database handle */
     unsigned int flags,    /* Operational flags */
@@ -2562,7 +2563,7 @@ static int openDatabase(
     if (db == 0) goto opendb_out;
     if (isThreadsafe)
     {
-        db->mutex = sqlite3MutexAlloc(SQLITE_MUTEX_RECURSIVE);
+        db->mutex = sqlite3MutexAlloc(SQLITE_MUTEX_RECURSIVE); /* 创建锁 */
         if (db->mutex == 0)
         {
             sqlite3_free(db);
@@ -2603,6 +2604,7 @@ static int openDatabase(
     /* Add the default collation sequence BINARY. BINARY works for both UTF-8
     ** and UTF-16, so add a version for each to avoid any unnecessary
     ** conversions. The only error that can occur here is a malloc() failure.
+    ** 添加默认的collation sequence.
     */
     createCollation(db, "BINARY", SQLITE_UTF8, 0, binCollFunc, 0);
     createCollation(db, "BINARY", SQLITE_UTF16BE, 0, binCollFunc, 0);
@@ -2629,7 +2631,9 @@ static int openDatabase(
         goto opendb_out;
     }
 
-    /* Open the backend database driver */
+    /* Open the backend database driver
+    ** 打开数据库文件
+    */
     rc = sqlite3BtreeOpen(db->pVfs, zOpen, db, &db->aDb[0].pBt, 0,
                           flags | SQLITE_OPEN_MAIN_DB);
     if (rc != SQLITE_OK)

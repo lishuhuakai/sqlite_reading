@@ -1303,7 +1303,8 @@ struct VTable
 ** the table.  If a table has no INTEGER PRIMARY KEY, then a random rowid
 ** is generated for each row of the table.  TF_HasPrimaryKey is set if
 ** the table has any PRIMARY KEY, INTEGER or otherwise.
-** 如果表有INTEGER PRIMARY KEY, 那么Table.iPKey是key的索引值.否则iPKey是一个负数.只有主键(PRIMARY KEY)
+** 如果表有INTEGER PRIMARY KEY(主键只有一列,此列类型为整数), 那么Table.iPKey是key的索引值.
+** 否则iPKey是一个负数.只有主键(PRIMARY KEY)
 ** 是整数,该字段才会被设置,一个整数类型的主键被用作表中每一行的rowid,如果一张表没有整数类型的主键,那么数据库将会为
 ** 表中的每一行随机产生一个rowid,如果表有任意的主键,TF_HasPrimaryKey标记将会被设置上
 **

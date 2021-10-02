@@ -384,11 +384,13 @@ static int doWalCallbacks(sqlite3 *db)
 /*
 ** Execute the statement pStmt, either until a row of data is ready, the
 ** statement is completely executed or an error occurs.
+** 执行语句pStmt,直到一行数据已经准备好
 **
 ** This routine implements the bulk of the logic behind the sqlite_step()
 ** API.  The only thing omitted is the automatic recompile if a
 ** schema change has occurred.  That detail is handled by the
 ** outer sqlite3_step() wrapper procedure.
+** 此函数实现了sqlite_step()函数的大部分逻辑,但是当schema发生更改的时候,不会重新编译.
 */
 static int sqlite3Step(Vdbe *p)
 {
@@ -475,7 +477,7 @@ static int sqlite3Step(Vdbe *p)
 #endif /* SQLITE_OMIT_EXPLAIN */
     {
         db->vdbeExecCnt++;
-        rc = sqlite3VdbeExec(p);
+        rc = sqlite3VdbeExec(p); /* 这里开始执行字节码 */
         db->vdbeExecCnt--;
     }
 
@@ -486,6 +488,7 @@ static int sqlite3Step(Vdbe *p)
     {
         sqlite3_int64 iNow;
         sqlite3OsCurrentTimeInt64(db->pVfs, &iNow);
+        /* 性能分析 */
         db->xProfile(db->pProfileArg, p->zSql, (iNow - p->startTime) * 1000000);
     }
 #endif
@@ -758,6 +761,7 @@ int sqlite3_aggregate_count(sqlite3_context *p)
 
 /*
 ** Return the number of columns in the result set for the statement pStmt.
+** 结果集中列的个数
 */
 int sqlite3_column_count(sqlite3_stmt *pStmt)
 {
@@ -782,6 +786,7 @@ int sqlite3_data_count(sqlite3_stmt *pStmt)
 ** it is, return a pointer to the Mem for the value of that column.
 ** If iCol is not valid, return a pointer to a Mem which has a value
 ** of NULL.
+** @param i 列在表中下标
 */
 static Mem *columnMem(sqlite3_stmt *pStmt, int i)
 {
@@ -864,6 +869,7 @@ static void columnMallocFailure(sqlite3_stmt *pStmt)
 /**************************** sqlite3_column_  *******************************
 ** The following routines are used to access elements of the current row
 ** in the result set.
+** 下面的函数用于访问结果集中当前行的数据
 */
 const void *sqlite3_column_blob(sqlite3_stmt *pStmt, int i)
 {
@@ -1226,6 +1232,7 @@ int sqlite3_bind_int(sqlite3_stmt *p, int i, int iValue)
 {
     return sqlite3_bind_int64(p, i, (i64)iValue);
 }
+/* 这里其实就是设置对应内存块的值 */
 int sqlite3_bind_int64(sqlite3_stmt *pStmt, int i, sqlite_int64 iValue)
 {
     int rc;

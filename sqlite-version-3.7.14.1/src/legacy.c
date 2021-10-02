@@ -28,9 +28,13 @@
 ** is invoked, even for queries.
 */
 int sqlite3_exec(
+    /* sqlite3句柄 */
     sqlite3 *db,                /* The database on which the SQL executes */
+    /* 待执行的sql语句 */
     const char *zSql,           /* The SQL to be executed */
+    /* 回调函数 */
     sqlite3_callback xCallback, /* Invoke this callback routine */
+    /* 回调函数的参数 */
     void *pArg,                 /* First argument to xCallback() */
     char **pzErrMsg             /* Write error messages here */
 )
@@ -67,7 +71,7 @@ int sqlite3_exec(
         }
 
         callbackIsInit = 0;
-        nCol = sqlite3_column_count(pStmt);
+        nCol = sqlite3_column_count(pStmt); /* 结果集中列的个数 */
 
         while (1)
         {
@@ -108,6 +112,7 @@ int sqlite3_exec(
                         }
                     }
                 }
+                /* 调用回调函数 */
                 if (xCallback(pArg, nCol, azVals, azCols))
                 {
                     rc = SQLITE_ABORT;

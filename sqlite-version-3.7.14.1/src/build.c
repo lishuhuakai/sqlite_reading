@@ -1282,22 +1282,28 @@ void sqlite3AddDefaultValue(Parse *pParse, ExprSpan *pSpan)
 ** Designate the PRIMARY KEY for the table.  pList is a list of names
 ** of columns that form the primary key.  If pList is NULL, then the
 ** most recently added column of the table is the primary key.
+** 为表指定主键,pList是主键列的名称,如果pList为NULL,那么表中最近添加的列为主键.
 **
 ** A table can have at most one primary key.  If the table already has
 ** a primary key (and this is the second primary key) then create an
 ** error.
+** 一张表最多只有一个主键,如果表中已经存在了一个主键,那么报错
 **
 ** If the PRIMARY KEY is on a single column whose datatype is INTEGER,
 ** then we will try to use that column as the rowid.  Set the Table.iPKey
 ** field of the table under construction to be the index of the
 ** INTEGER PRIMARY KEY column.  Table.iPKey is set to -1 if there is
 ** no INTEGER PRIMARY KEY.
+** 如果主键只有一列,而且类型为INTEGER, 那么我们将会将那一列设置为rowid,将Table.iPKey用来
+** 记录此列的下标(表中的位置).
 **
 ** If the key is not an INTEGER PRIMARY KEY, then create a unique
 ** index for the key.  No index is created for INTEGER PRIMARY KEYs.
+** 如果key不是一个整数类型的主键,为key创建一个索引
 */
 void sqlite3AddPrimaryKey(
     Parse *pParse,    /* Parsing context */
+    /* 主键对应的列 */
     ExprList *pList,  /* List of field names to be indexed */
     int onError,      /* What to do with a uniqueness conflict */
     int autoInc,      /* True if the AUTOINCREMENT keyword is present */
@@ -1308,7 +1314,7 @@ void sqlite3AddPrimaryKey(
     char *zType = 0;
     int iCol = -1, i;
     if (pTab == 0 || IN_DECLARE_VTAB) goto primary_key_exit;
-    if (pTab->tabFlags & TF_HasPrimaryKey)
+    if (pTab->tabFlags & TF_HasPrimaryKey) /* 已经存在主键 */
     {
         sqlite3ErrorMsg(pParse,
                         "table \"%s\" has more than one primary key", pTab->zName);
@@ -1318,7 +1324,7 @@ void sqlite3AddPrimaryKey(
     if (pList == 0)
     {
         iCol = pTab->nCol - 1;
-        pTab->aCol[iCol].isPrimKey = 1;
+        pTab->aCol[iCol].isPrimKey = 1; /* 最后一列为主键? */
     }
     else
     {
@@ -1338,10 +1344,11 @@ void sqlite3AddPrimaryKey(
         }
         if (pList->nExpr > 1) iCol = -1;
     }
-    if (iCol >= 0 && iCol < pTab->nCol)
+    if (iCol >= 0 && iCol < pTab->nCol) /* iCol >=0 表示主键仅有一列 */
     {
         zType = pTab->aCol[iCol].zType;
     }
+    /* 仅有的这一列是整数 */
     if (zType && sqlite3StrICmp(zType, "INTEGER") == 0
         && sortOrder == SQLITE_SO_ASC)
     {
@@ -1360,6 +1367,7 @@ void sqlite3AddPrimaryKey(
     else
     {
         Index *p;
+        /* 创建一个索引 */
         p = sqlite3CreateIndex(pParse, 0, 0, 0, pList, onError, 0, 0, sortOrder, 0);
         if (p)
         {

@@ -610,6 +610,7 @@ int sqlite3SchemaToIndex(sqlite3 *db, Schema *pSchema)
 
 /*
 ** Compile the UTF-8 encoded SQL statement zSql into a statement handle.
+** 编译sql语句
 */
 static int sqlite3Prepare(
     sqlite3 *db,              /* Database handle. */
@@ -627,7 +628,7 @@ static int sqlite3Prepare(
     int i;                    /* Loop counter */
 
     /* Allocate the parsing context */
-    pParse = sqlite3StackAllocZero(db, sizeof(*pParse));
+    pParse = sqlite3StackAllocZero(db, sizeof(*pParse)); /* 分配一个parser */
     if (pParse == 0)
     {
         rc = SQLITE_NOMEM;
@@ -697,7 +698,7 @@ static int sqlite3Prepare(
         zSqlCopy = sqlite3DbStrNDup(db, zSql, nBytes);
         if (zSqlCopy)
         {
-            sqlite3RunParser(pParse, zSqlCopy, &zErrMsg);
+            sqlite3RunParser(pParse, zSqlCopy, &zErrMsg); /* 解析sql语句 */
             sqlite3DbFree(db, zSqlCopy);
             pParse->zTail = &zSql[pParse->zTail - zSqlCopy];
         }
@@ -805,6 +806,7 @@ static int sqlite3LockAndPrepare(
     sqlite3 *db,              /* Database handle. */
     const char *zSql,         /* UTF-8 encoded SQL statement. */
     int nBytes,               /* Length of zSql in bytes. */
+    /* 如果为true,那么将sql语句保存到结构sqlite3_stmt之中 */
     int saveSqlFlag,          /* True to copy SQL text into the sqlite3_stmt */
     Vdbe *pOld,               /* VM being reprepared */
     sqlite3_stmt **ppStmt,    /* OUT: A pointer to the prepared statement */
@@ -895,10 +897,15 @@ int sqlite3_prepare(
     assert(rc == SQLITE_OK || ppStmt == 0 || *ppStmt == 0); /* VERIFY: F13021 */
     return rc;
 }
+
+/* 编译sql语句,其实sqlite3_stmt是vdbe */
 int sqlite3_prepare_v2(
+    /* 数据库句柄 */
     sqlite3 *db,              /* Database handle. */
+    /* 待执行的sql语句 */
     const char *zSql,         /* UTF-8 encoded SQL statement. */
     int nBytes,               /* Length of zSql in bytes. */
+    /* 向外部提供的接口 */
     sqlite3_stmt **ppStmt,    /* OUT: A pointer to the prepared statement */
     const char **pzTail       /* OUT: End of parsed string */
 )

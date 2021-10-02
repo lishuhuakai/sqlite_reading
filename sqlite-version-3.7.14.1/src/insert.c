@@ -508,9 +508,11 @@ void sqlite3Insert(
     int i, j, idx;        /* Loop counters */
     Vdbe *v;              /* Generate code into this virtual machine */
     Index *pIdx;          /* For looping over indices of the table */
+    /* 数据中列的个数 */
     int nColumn;          /* Number of columns in the data */
     int nHidden = 0;      /* Number of hidden columns if TABLE is virtual */
     int baseCur = 0;      /* VDBE Cursor number for pTab */
+    /* 整数类型的主键 */
     int keyColumn = -1;   /* Column that is the INTEGER PRIMARY KEY */
     int endOfLoop;        /* Label for the end of the insertion loop */
     int useTempTable = 0; /* Store SELECT results in intermediate table */
@@ -810,7 +812,7 @@ void sqlite3Insert(
     */
     if (pColumn)
     {
-        for (i = 0; i < pColumn->nId; i++)
+        for (i = 0; i < pColumn->nId; i++) /* 重新定位列的下标值 */
         {
             pColumn->a[i].idx = -1;
         }
@@ -820,8 +822,8 @@ void sqlite3Insert(
             {
                 if (sqlite3StrICmp(pColumn->a[i].zName, pTab->aCol[j].zName) == 0)
                 {
-                    pColumn->a[i].idx = j;
-                    if (j == pTab->iPKey)
+                    pColumn->a[i].idx = j; /* 记录下列的下标(列在表中的位置) */
+                    if (j == pTab->iPKey) /* 整数类型的主键,仅有一列 */
                     {
                         keyColumn = i;
                     }
@@ -830,11 +832,11 @@ void sqlite3Insert(
             }
             if (j >= pTab->nCol)
             {
-                if (sqlite3IsRowid(pColumn->a[i].zName))
+                if (sqlite3IsRowid(pColumn->a[i].zName)) /* rowid作为key */
                 {
                     keyColumn = i;
                 }
-                else
+                else /* 需要报错 */
                 {
                     sqlite3ErrorMsg(pParse, "table %S has no column named %s",
                                     pTabList, 0, pColumn->a[i].zName);
@@ -848,6 +850,8 @@ void sqlite3Insert(
     /* If there is no IDLIST term but the table has an integer primary
     ** key, the set the keyColumn variable to the primary key column index
     ** in the original table definition.
+    ** 如果不存在IDLIST的项,但是表存在一个整数类型的主键,将变量keyColumn设置为此列的下标
+    ** (也就是在表中的位置)
     */
     if (pColumn == 0 && nColumn > 0)
     {
@@ -1028,6 +1032,7 @@ void sqlite3Insert(
         {
             if (useTempTable)
             {
+                /* 将keyColumn对应列的值放入regRowid寄存器 */
                 sqlite3VdbeAddOp3(v, OP_Column, srcTab, keyColumn, regRowid);
             }
             else if (pSelect)
