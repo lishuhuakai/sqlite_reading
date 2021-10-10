@@ -3208,6 +3208,7 @@ static int pagerUndoCallback(void *pCtx, Pgno iPg)
 
 /*
 ** This function is called to rollback a transaction on a WAL database.
+** WAL数据库中进行回滚操作
 */
 static int pagerRollbackWal(Pager *pPager)
 {
@@ -3247,6 +3248,7 @@ static int pagerWalFrames(
     Pager *pPager,                  /* Pager object */
     PgHdr *pList,                   /* List of frames to log */
     Pgno nTruncate,                 /* Database size after this commit */
+    /* 是否要进行提交操作 */
     int isCommit                    /* True if this is a commit */
 )
 {
