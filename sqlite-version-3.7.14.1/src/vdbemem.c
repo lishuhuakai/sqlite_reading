@@ -190,6 +190,7 @@ int sqlite3VdbeMemExpandBlob(Mem *pMem)
 
 /*
 ** Make sure the given Mem is \u0000 terminated.
+** 保证给定的Mem是 \u0000 结尾.
 */
 int sqlite3VdbeMemNulTerminate(Mem *pMem)
 {
@@ -433,7 +434,7 @@ double sqlite3VdbeRealValue(Mem *pMem)
 {
     assert(pMem->db == 0 || sqlite3_mutex_held(pMem->db->mutex));
     assert(EIGHT_BYTE_ALIGNMENT(pMem));
-    if (pMem->flags & MEM_Real)
+    if (pMem->flags & MEM_Real) /* 判断值的类型,然后将其转换成double */
     {
         return pMem->r;
     }
@@ -495,6 +496,7 @@ void sqlite3VdbeIntegerAffinity(Mem *pMem)
 
 /*
 ** Convert pMem to type integer.  Invalidate any prior representations.
+** 将pMem转换为整数.
 */
 int sqlite3VdbeMemIntegerify(Mem *pMem)
 {
@@ -713,7 +715,7 @@ void sqlite3VdbeMemShallowCopy(Mem *pTo, const Mem *pFrom, int srcType)
     VdbeMemRelease(pTo);
     memcpy(pTo, pFrom, MEMCELLSIZE);
     pTo->xDel = 0;
-    if ((pFrom->flags & MEM_Static) == 0)
+    if ((pFrom->flags & MEM_Static) == 0) /* 非静态 */
     {
         pTo->flags &= ~(MEM_Dyn | MEM_Static | MEM_Ephem);
         assert(srcType == MEM_Ephem || srcType == MEM_Static);

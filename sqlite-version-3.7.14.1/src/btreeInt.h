@@ -260,14 +260,17 @@ typedef struct BtLock BtLock;
 ** As each page of the file is loaded into memory, an instance of the following
 ** structure is appended and initialized to zero.  This structure stores
 ** information about the page that is decoded from the raw file page.
+** 每加载文件一个页至内存,以下结构体的一个实例便会被创建,而且初始化为0.此结构体保存着页的相关信息.
 **
 ** The pParent field points back to the parent page.  This allows us to
 ** walk up the BTree from any leaf to the root.  Care must be taken to
 ** unref() the parent page pointer when this page is no longer referenced.
 ** The pageDestructor() routine handles that chore.
+** pParent字段指向父页(parent page),这个允许我们从btree的任意叶子节点遍历到根.
 **
 ** Access to all fields of this structure is controlled by the mutex
 ** stored in MemPage.pBt->mutex.
+** 访问此结构体的任意字段必须要加锁.
 */
 struct MemPage
 {
@@ -277,7 +280,9 @@ struct MemPage
     u8 intKey;           /* True if intkey flag is set */
     /* 是否为叶子节点 */
     u8 leaf;             /* True if leaf flag is set */
+    /* 此页是否存储数据 */
     u8 hasData;          /* True if this page stores data */
+    /* 头部偏移,page1有一个100字节的文件头,其他page没有 */
     u8 hdrOffset;        /* 100 for page 1.  0 otherwise */
     u8 childPtrSize;     /* 0 if leaf==1.  4 if leaf==0 */
     u8 max1bytePayload;  /* min(maxLocal,127) */
@@ -296,6 +301,7 @@ struct MemPage
     /* apOvfl指向overflow cell的首部 */
     u8 *apOvfl[5];       /* Pointers to the body of overflow cells */
     BtShared *pBt;       /* Pointer to BtShared that this page is part of */
+    /* 磁盘中的page数据 */
     u8 *aData;           /* Pointer to disk image of the page data */
     u8 *aDataEnd;        /* One byte past the end of usable data */
     u8 *aCellIdx;        /* The cell index area */
@@ -470,6 +476,8 @@ struct BtShared /* BtShared代表Btree中可以共享的部分 */
 ** An instance of the following structure is used to hold information
 ** about a cell.  The parseCellPtr() function fills in this structure
 ** based on information extract from the raw disk page.
+** 以下结构体的一个实例用于存储一个cell的信息.parseCellPtr()函数将基于从磁盘page中读出的数据
+** 来填充这个结构体的字段.
 */
 typedef struct CellInfo CellInfo;
 struct CellInfo
@@ -480,7 +488,7 @@ struct CellInfo
     u32 nPayload;  /* Total amount of payload */
     /* cell 头部所占用的字节数目 */
     u16 nHeader;   /* Size of the cell content header in bytes */
-    /* 本page所持有的数据量 */
+    /* cell在local page的数据量 */
     u16 nLocal;    /* Amount of payload held locally */
     /* cell在overflow page中的偏移量 */
     u16 iOverflow; /* Offset to overflow page number.  Zero if no overflow */
@@ -502,7 +510,7 @@ struct CellInfo
 /*
 ** A cursor is a pointer to a particular entry within a particular
 ** b-tree within a database file.
-** 游标(cursor)是数据库文件中一个b-tree中的指针,指向一个特殊的entry
+** 游标(cursor)是数据库文件中一个b-tree中的指针,指向数据库文件中的一个特殊entry
 **
 ** The entry is identified by its MemPage and the index in
 ** MemPage.aCell[] of the entry.
@@ -517,6 +525,7 @@ struct CellInfo
 */
 struct BtCursor
 {
+    /* 游标所属的Btree */
     Btree *pBtree;            /* The Btree to which this cursor belongs */
     BtShared *pBt;            /* The BtShared this cursor points to */
     BtCursor *pNext, *pPrev;  /* Forms a linked list of all cursors */
@@ -532,20 +541,24 @@ struct BtCursor
     void *pKey;      /* Saved key that was cursor's last known position */
     int skipNext;    /* Prev() is noop if negative. Next() is noop if positive */
     u8 wrFlag;                /* True if writable */
-    /* 游标是否指向了最后一个entry */
+    /* 游标是否指向了表的最后一条记录(entry) */
     u8 atLast;                /* Cursor pointing to the last entry */
+    /* 如果info.nKey有效,这个值为true */
     u8 validNKey;             /* True if info.nKey is valid */
+    /* 游标状态 */
     u8 eState;                /* One of the CURSOR_XXX constants (see below) */
 #ifndef SQLITE_OMIT_INCRBLOB
     u8 isIncrblobHandle;      /* True if this cursor is an incr. io handle */
 #endif
     u8 hints;                             /* As configured by CursorSetHints() */
-    /* iPage是apPage中的索引 */
+    /* apPage[iPage]记录了游标现在处在数据库文件中的页 */
     i16 iPage;                            /* Index of current page in apPage */
     /* 关于aiIdx以及apPage两个数组
-    ** apPage数组记录每一层的page,aiIdx记录每一层访问cell的索引
+    ** apPage[level]--游标在第level层,游标正处于apPage[level]所指示的page之中
+    ** aiIdx[level]--在第level层,游标正指向第aiIdx[level]个cell
     */
     u16 aiIdx[BTCURSOR_MAX_DEPTH];        /* Current index in apPage[i] */
+    /* apPage是一个数组,记录了游标从root page到current page所历经的页 */
     MemPage *apPage[BTCURSOR_MAX_DEPTH];  /* Pages from root to current page */
 };
 
@@ -554,11 +567,13 @@ struct BtCursor
 **
 ** CURSOR_VALID:
 **   Cursor points to a valid entry. getPayload() etc. may be called.
+**   游标指向一个有效的entry.
 **
 ** CURSOR_INVALID:
 **   Cursor does not point to a valid entry. This can happen (for example)
 **   because the table is empty or because BtreeCursorFirst() has not been
 **   called.
+**   游标指向一个无效的entry,这可能是因为表为空,又或者是因为BtreeCursorFirst没有被调用.
 **
 ** CURSOR_REQUIRESEEK:
 **   The table that this cursor was opened on still exists, but has been
@@ -566,6 +581,9 @@ struct BtCursor
 **   in variables BtCursor.pKey and BtCursor.nKey. When a cursor is in
 **   this state, restoreCursorPosition() can be called to attempt to
 **   seek the cursor to the saved position.
+**   游标指向的表依然存在,但是自从游标上次使用之后,表发生了更改.游标的位置被存储在变量BtCursor.pKey
+**   以及BtCursor.nKey之中.如果游标处于此种状态,调用restoreCursorPostion()会尝试将游标移动到
+**   保存的位置.
 **
 ** CURSOR_FAULT:
 **   A unrecoverable error (an I/O error or a malloc failure) has occurred
@@ -573,6 +591,7 @@ struct BtCursor
 **   cursor.  The error has left the cache in an inconsistent state.
 **   Do nothing else with this cursor.  Any attempt to use the cursor
 **   should return the error code stored in BtCursor.skip
+**   一个不可恢复的错误发生了.
 */
 #define CURSOR_INVALID           0
 #define CURSOR_VALID             1

@@ -35,7 +35,7 @@ SQLite假设bit反转的情况由各种物理原因, 以及操作系统bug等因
 
 ### 3.1 初始状态
 当数据库连接被第一次打开时, 整个系统的状态如下图. 最右边代表被存储在硬盘上的数据, 每个矩形就是一个区. 蓝色代表这个区包含了数据库文件. 中间是操作系统的缓冲区. 在下图中, 其白色表示当前缓冲区是空的. 而最左边则是用户空间(即用户进程可以直接操作的空间). 此时数据库连接刚被打开, 什么操作都还未被执行.
-![](http://www.sqlite.org/images/ac/commit-0.gif)
+![](pic/SQLite怎样实现原子性/commit-0.gif)
 
 ### 3.2 申请读取锁
 在写数据之前, 你必须先读出数据并对其做出修改. 即使是插入数据, SQLite也得先读取sqlite_master表中的内容, 并由此来解释INSERT语句, 并决定将数据存储在哪个地方.
@@ -43,19 +43,19 @@ SQLite假设bit反转的情况由各种物理原因, 以及操作系统bug等因
 读取数据库文件的第一步是申请一把shared锁. "shared"锁允许多个数据库连接同时读取一个数据库文件. 同时shared锁也会阻止其他连接对数据库文件进行修改, 因为现在正有连接在读取数据库文件内容. 这个性质很重要, 因为如果你在读取的同时, 另外一个地方却在对数据库文件进行修改, 那么你读取出的内容, 可能包含一部分被修改, 一部分未被修改的内容. 这会使写入操作丢失原子性.
 
 值得注意的是, shared锁被加在了系统缓冲区上, 而不是硬盘文件上. 因为文件锁只是操作系统维护在内存空间中的一点信息而已. 因此, 如果系统出现故障, 这把锁或许会消失. 
-![](http://www.sqlite.org/images/ac/commit-1.gif)
+![](pic/SQLite怎样实现原子性/commit-1.gif)
 
 ### 3.3 从数据库文件中读取数据
 当shared锁申请完成后, 我们开始读入数据. 在这个场景中, 数据必须先从硬盘到操作系统缓冲区, 再到用户空间. 在多次读入中, 某些数据或许能直接在操作系统缓冲区找到, 此时就不必再从硬盘中拷贝数据.
 
 通常情况下, 只有部分页会被读入到用户空间. 在这个例子中, 只有3页内容被我们读入. 通常情况下, 一份数据库文件含有上千页数据, 而平时只有少量数据会被读入到用户空间中.
-![](http://www.sqlite.org/images/ac/commit-2.gif)
+![](pic/SQLite怎样实现原子性/commit-2.gif)
 
 ### 3.4 取得reserved锁
 修改数据库前, SQLite必须先取得reserved锁. reserved锁和shared锁都运行进程从数据库文件中读取数据. 一个reserved锁能和多个shared锁共存. 但是一个数据库文件上只能有一把reserved锁. 因此同一时刻能只能有一个进程能尝试对数据库文件进行写入.
 
 reserved锁的含义是, 表示当前进程准备在不久后对数据库文件进行修改和写入操作. 因为修改和写入暂时并未执行, 因此其他进程还能继续读取数据库, 但是其他进程不能尝试对数据库进行修改和写入.
-![](http://www.sqlite.org/images/ac/commit-3.gif)
+![](pic/SQLite怎样实现原子性/commit-3.gif)
 
 ### 3.5 创建rollback journal文件
 在修改数据库文件前, SQLite先会创建一个rollback journal文件, 并将原内容写入到这个文件中. rollback journal文件用来保存回滚事务时需要用到的所有信息. 
@@ -63,11 +63,11 @@ reserved锁的含义是, 表示当前进程准备在不久后对数据库文件�
 rollback journal文件包含了一个文件头(下图绿色部分), 其中记录了原数据的大小. 所以即使我们修改了文件的大小, 也能从rollback journal文件中得知修改前的大小. 被修改页的页号也被记录在这个文件中. 
 
 建立新文件时, 多数的操作系统都不好向硬盘中写入任何数据. 新的文件暂时只是被创建于操作系统的缓冲区中. 只有当稍后操作系统有空闲时, 才会把新文件写入到硬盘. 对用户来说, I/O操作会比实际写入到硬盘中快. 在下图中, 硬盘下的rollback journal对应部分为白色, 我们以此来表示这种情况.
-![](http://www.sqlite.org/images/ac/commit-4.gif)
+![](pic/SQLite怎样实现原子性/commit-4.gif)
 
 ### 3.6 修改用户空间的数据
 当原始内容被存入到rollback journal文件后, 用户空间中的数据将被修改. 每个数据库连接都有自己的用户空间, 所以这个修改只对该连接自己有效. 其他数据库连接还只能看到未被修改的数据. 所以当该连接进行修改时, 其他连接还能读取数据库内容. 
-![](http://www.sqlite.org/images/ac/commit-5.gif)
+![](pic/SQLite怎样实现原子性/commit-5.gif)
 
 ### 3.7 刷新rollback journal到硬盘
 下一步是将rollback journal的内容写入到硬盘中. 这是关键的一步, 这一步保证数据库能处理一些极端情况, 比如断电. 这一步会花费不少时间, 因为硬盘IO向来是比较慢的.
@@ -75,21 +75,21 @@ rollback journal文件包含了一个文件头(下图绿色部分), 其中记录
 这一步通常比你想的"简单的刷新rollback journal文件到硬盘"要复杂. 主流的操作系统中, 需要分两步进行"刷新"(或者说"同步"). 第一步是刷新rollback journal的主要内容(蓝色部分), 接下来修改rollback journal的文件头部分, 然后刷新文件头到硬盘. 
 
 先刷新主要内容, 再刷新文件头部分的原因是为了防止这种情况: 如果现在已经刷入了文件头, 在刷入文件主要内容时, 断电了, 那么由于SQLite对journal文件只检查其文件头是否合法, 那么这份错误的journal就可能被当作有效数据被用于回滚.
-![](http://www.sqlite.org/images/ac/commit-6.gif)
+![](pic/SQLite怎样实现原子性/commit-6.gif)
 
 ### 3.8 取得exclusive锁
 在写回数据到数据库文件之前, 我们必须得到exclusive锁. 取得exclusive锁的过程分两步. 第一步是取得pending, 接着将pengding锁转化为exclusive.
 
 pending锁运行之前已经申请shared锁的进程继续读取内容. 但是不允许新申请shared锁. pengding锁的目的是为了防止写入操作被饿死, 比如一直有新进程申请读取数据库, 写操作被一直等待. 当所有的shared锁都被释放后, pending锁将被转化为exclusive锁.
-![](http://www.sqlite.org/images/ac/commit-7.gif)
+![](pic/SQLite怎样实现原子性/commit-7.gif)
 
 ### 3.9 写回数据
 取得exclusive锁后, 以为着已经没有其他进程在读取这份文件了, 我们可以安全的向里面写入数据了. 同样的, 由于操作系统缓冲区的存在, 被写回的内容不会被直接更新到硬盘, 而只是更新到了操作系统缓冲区. 
-![](http://www.sqlite.org/images/ac/commit-8.gif)
+![](pic/SQLite怎样实现原子性/commit-8.gif)
 
 ### 3.10 刷新数据到硬盘
 我们将在此时再进行一次刷新(上次刷新是将journal文件刷新到硬盘), 将操作系统缓冲区上对数据库的修改的内容刷新到硬盘. 这是至关重要的一步操作. 同样的, 由于硬盘I/O速度缓慢, 这一步和3.7一样耗时.
-![](http://www.sqlite.org/images/ac/commit-9.gif)
+![](pic/SQLite怎样实现原子性/commit-9.gif)
 
 ### 3.11 删除rollback journal
 当数据库的修改内容被刷新到硬盘后, rollback journal文件就可以被删除了. 这步删除操作将在事务被提交完成后立即执行. 如果在删除之前发生了断电, 那么恢复程序(之后会介绍)会根据rollback journal回滚之前的事务. 如果断电发生在删除文件之后, 那么恢复程序不会对之前事务进行回滚. 所以SQLite对事务的回滚, 其实是根据是否存在rollback journal文件决定的.
@@ -99,13 +99,13 @@ pending锁运行之前已经申请shared锁的进程继续读取内容. 但是�
 事务的回滚决定与是否存在journal文件, 而文件的删除被进程当作原子操作, 因此从进程的角度来看, 事务的提交也会是原子性的.
 
 其实对于大多数操作系统, 删除文件的代价是巨大的, 因此作为优化, SQLite能被设置为"将journal文件的文件头写成0"或者"使用truncate将文件大小设置为0", 这两种方式, 来代替删除文件. "使用truncate设置文件大小为0", 也如同"删除文件"一样, 被视为原子性的."将journal的文件头写成0"虽然不是原子性的, 但是在进行回滚前, 会对journal文件头进行验证, 如果有任何错误, 回滚将不会发生.
-![](http://www.sqlite.org/images/ac/commit-A.gif)
+![](pic/SQLite怎样实现原子性/commit-A.gif)
 
 ### 3.12 释放锁
 最后一步是释放exclusive锁, 使得其他进程能重新访问这份数据库文件.
 
 如下图, 可以发现释放锁后, 用户空间的内容已经被情况, 但是在比较新版本的SQLite中, 用户空间中的内容能够被再保存一段时间, 以应付下一次事务操作, 这比再重新从硬盘中读出数据, 显然快的多. 但是在使用上次事务遗留数据时, 我们第一步操作依然是要取得一个shared锁, 因为此时可能有其他进程正在修改数据库文件. 同时每个数据库文件的文件头中, 都有一个计数器, 表示当前数据库文件被修改过的次数. 如果我们发现此时这个计数器和我们之前存的不一样, 那么说明已经有进程修改过数据库了. 那么这是我们将情况用户空间, 重读入数据.
-![](http://www.sqlite.org/images/ac/commit-B.gif)
+![](pic/SQLite怎样实现原子性/commit-B.gif)
 
 ### 4.0 回滚
 原子操作会被当作"立即发生". 但是单独考察上面描述的各个过程, 明细不是原子性的, 比如在某次写入期间, 断电了, 那么写入操作就只有部分被完成. 为了维护操作的原子性, 我们增加了"回滚"机制, 如果出现了为完全完成的事务, 回滚机制能将数据库文件还原到事务进行前的状态. 
@@ -114,7 +114,7 @@ pending锁运行之前已经申请shared锁的进程继续读取内容. 但是�
 假设我们在3.10步, 正在向硬盘写回内容的时候, 断电了. 当电力恢复后, 此时的数据情况如下图表示, 我们修改的3页中, 只有1页被修改成功了, 有1页只修改了部分, 有1页还完全为被修改. 
 
 但是此时rollback journal文件是完整的存在硬盘上的, 这点很关键. 我们在3.7中分两步刷新rollback journal文件的原因就是要保证它确确实实毫无差错的被保存在了硬盘上. 
-![](http://www.sqlite.org/images/ac/rollback-0.gif)
+![](pic/SQLite怎样实现原子性/rollback-0.gif)
 
 ### 4.2 Hot Rollback Journal
 当SQLite第一次准备读取数据库文件时, 它会发现存在一个rollback journal文件. 接下来SQLite检查这个文件是否是一个"hot rollback journal". "hot rollback journal"指的是需要被立马使用, 用于回滚数据库文件的journal文件. "hot rollback journal"只会在某个事务出现错误后, 才会出现. 
@@ -132,21 +132,21 @@ pending锁运行之前已经申请shared锁的进程继续读取内容. 但是�
 5. 这份文件中不包含某个"master journal"文件名(5.5节中介绍), 如果包含, 那这个"master journal"文件一定存在.
 
 Hot rollback journal的出现, 意味着数据库之前出现了某些错误, 现在亟需被修复.
-![](http://www.sqlite.org/images/ac/rollback-1.gif)
+![](pic/SQLite怎样实现原子性/rollback-1.gif)
 
 ### 4.3 取得exclusive锁
 回滚的第一步就是立马取得一把exclusive锁, 防止其他进行对数据库文件进行读写.
-![](http://www.sqlite.org/images/ac/rollback-2.gif)
+![](pic/SQLite怎样实现原子性/rollback-2.gif)
 
 ### 4.4 回滚所有未完成修改
 取得exclusive锁后, 就得到了写数据库文件的权利. 接下来的操作是从硬盘上的rollback journal文件中读取之前页的内容, 然后将其写回到数据库文件. 写回到数据库文件中后, 数据库文件中的内容就被修复了.
-![](http://www.sqlite.org/images/ac/rollback-3.gif)
+![](pic/SQLite怎样实现原子性/rollback-3.gif)
 
 ### 4.5 删除Hot journal
 Journal文件中的数据被写回到数据库后, 就可以将其删除了. 在3.11中已经说过, 你可以直接删除journal文件, 也可以truncate它为0, 也可以修改它的文件头. 总之不管用哪种方法, 这份hot journal文件都会被删除或者变成非法, 对SQLite来说它已经不会存在了.
-![](http://www.sqlite.org/images/ac/rollback-4.gif)
+![](pic/SQLite怎样实现原子性/rollback-4.gif)
 
 ### 4.6 继续你之前的操作
 当最后一步修复工作完成后, 你就能继续你之前的操作了, 就好像出错的事务并没有发生一样. 
-![](http://www.sqlite.org/images/ac/rollback-5.gif)
+![](pic/SQLite怎样实现原子性/rollback-5.gif)
 

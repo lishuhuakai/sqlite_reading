@@ -9,10 +9,9 @@
 
 2. ACID的是如何实现的,是我们要关注的核心之一,也就是Pager模块是重点.
 
-   ![](https://github.com/lishuhuakai/sqlite_reading/blob/main/Document/official_documents/imgs/image-20210828173741457.png)
+   ![](./Document/official_documents/imgs/image-20210828173741457.png)
    
 3. VDBE模块也是一个重点,主要只要关注增删改的优化.
-
 
 # 读码建议
 
@@ -29,6 +28,7 @@
 1. 源码,源码中自带有很详细的注释,可以帮助理解.
 2. << sqlite Database System and Implementation >>
 3. 官方文档 Database FIle Format,阐述了数据库文件格式,对读代码非常有帮助,必读.
+4. 本人在Document文件夹中放入了一些参考资料,markdown格式,如果出现显示不正常的情况,可以使用typora尝试打开,其他软件暂时不保证兼容性.
 
 # 读码日志
 
@@ -44,7 +44,7 @@ btree以及更下层的pager模块,更多的是做了一层抽象.为上层提�
 
 现在已经进行到了vdbe模块,这个模块只要认真熟悉字节码即可,理解这个模块,比较快捷的方式,是explain命令,将常用的命令都explain一遍,跟着字节码追踪一遍,就能理解个七七八八.
 
-![](https://github.com/lishuhuakai/sqlite_reading/blob/main/Document/official_documents/imgs/explain1.png)
+![](./Document/official_documents/imgs/explain1.png)
 
 ## 0919
 
@@ -55,3 +55,8 @@ btree以及更下层的pager模块,更多的是做了一层抽象.为上层提�
 代码生成部分基本啃完了,注释也基本写完.接下来就是注释 `sqlite3` 向外部暴露的 `c` 接口了.
 
 之后可能还会有一些零星的注释.但是估计也不会太多了.
+
+## 2022.12.31
+
+添加相对完整的代码注释,阅读笔记,不出意外,这应该是最后一次更新这份阅读笔记了.以后如果不是有修改sqlite的需求,估计不会再花更多精力在sqlite代码的解读上面.
+

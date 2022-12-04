@@ -8,7 +8,7 @@ InterfaceSQL CommandProcessorVirtual MachineB-TreePagerOS InterfaceTokenizerPars
 
 A nearby diagram shows the main components of SQLite and how they interoperate. The text below explains the roles of the various components.
 
-![architecture](https://github.com/lishuhuakai/sqlite_reading/blob/main/Document/official_documents/imgs/image-20210828173741457.png)
+![architecture](imgs/image-20210828173741457.png)
 
 # Overview
 

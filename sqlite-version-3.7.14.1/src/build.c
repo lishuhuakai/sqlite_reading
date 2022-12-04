@@ -2726,8 +2726,9 @@ static void sqlite3RefillIndex(Parse *pParse, Index *pIndex, int memRootPage)
 
     /* Open the table. Loop through all rows of the table, inserting index
     ** records into the sorter. */
+    /* 打开对应的表,扫描所有的记录 */
     sqlite3OpenTable(pParse, iTab, iDb, pTab, OP_OpenRead);
-    addr1 = sqlite3VdbeAddOp2(v, OP_Rewind, iTab, 0);
+    addr1 = sqlite3VdbeAddOp2(v, OP_Rewind, iTab, 0); /* 移动到第一条记录 */
     regRecord = sqlite3GetTempReg(pParse);
 
 #ifndef SQLITE_OMIT_MERGE_SORT
@@ -2751,7 +2752,7 @@ static void sqlite3RefillIndex(Parse *pParse, Index *pIndex, int memRootPage)
         addr2 = sqlite3VdbeCurrentAddr(v);
     }
     sqlite3VdbeAddOp2(v, OP_SorterData, iSorter, regRecord);
-    sqlite3VdbeAddOp3(v, OP_IdxInsert, iIdx, regRecord, 1);
+    sqlite3VdbeAddOp3(v, OP_IdxInsert, iIdx, regRecord, 1); /* 往索引所在的地方插入数据 */
     sqlite3VdbeChangeP5(v, OPFLAG_USESEEKRESULT);
 #else
     regIdxKey = sqlite3GenerateIndexKey(pParse, pIndex, iTab, regRecord, 1);
@@ -2794,6 +2795,7 @@ static void sqlite3RefillIndex(Parse *pParse, Index *pIndex, int memRootPage)
 ** UNIQUE constraint.  If pTable and pIndex are NULL, use pParse->pNewTable
 ** as the table to be indexed.  pParse->pNewTable is a table that is
 ** currently being constructed by a CREATE TABLE statement.
+** 在一个SQL表上创建一个新的索引.pName1.pName2是索引的名称.pTblList是被索引的表的名称.
 **
 ** pList is a list of columns to be indexed.  pList will be NULL if this
 ** is a primary key or unique-constraint on the most recent column added
@@ -2807,7 +2809,9 @@ Index *sqlite3CreateIndex(
     Parse *pParse,     /* All information about this parse */
     Token *pName1,     /* First part of index name. May be NULL */
     Token *pName2,     /* Second part of index name. May be NULL */
+    /* 被索引的表的名称 */
     SrcList *pTblName, /* Table to index. Use pParse->pNewTable if 0 */
+    /* 被索引的列 */
     ExprList *pList,   /* A list of columns to be indexed */
     int onError,       /* OE_Abort, OE_Ignore, OE_Replace, or OE_None */
     Token *pStart,     /* The CREATE token that begins this statement */
@@ -2883,6 +2887,7 @@ Index *sqlite3CreateIndex(
             ** sqlite3FixSrcList can never fail. */
             assert(0);
         }
+        /* 确定被索引的表 */
         pTab = sqlite3LocateTable(pParse, 0, pTblName->a[0].zName,
                                   pTblName->a[0].zDatabase);
         if (!pTab || db->mallocFailed) goto exit_create_index;
@@ -2936,7 +2941,7 @@ Index *sqlite3CreateIndex(
     */
     if (pName)
     {
-        zName = sqlite3NameFromToken(db, pName);
+        zName = sqlite3NameFromToken(db, pName); /* 索引的名称 */
         if (zName == 0) goto exit_create_index;
         assert(pName->z != 0);
         if (SQLITE_OK != sqlite3CheckObjectName(pParse, zName))
@@ -2951,6 +2956,7 @@ Index *sqlite3CreateIndex(
                 goto exit_create_index;
             }
         }
+        /* 先确定表上是否已经存在相同的索引 */
         if (sqlite3FindIndex(db, zName, pDb->zName) != 0)
         {
             if (!ifNotExist)
@@ -3253,8 +3259,10 @@ Index *sqlite3CreateIndex(
 
 
         /* Create the rootpage for the index
+        ** 开始写操作
         */
         sqlite3BeginWriteOperation(pParse, 1, iDb);
+        /* 创建索引 */
         sqlite3VdbeAddOp2(v, OP_CreateIndex, iDb, iMem);
 
         /* Gather the complete text of the CREATE INDEX statement into
@@ -3277,6 +3285,7 @@ Index *sqlite3CreateIndex(
         }
 
         /* Add an entry in sqlite_master for this index
+        ** 在sqlite_master表中插入一条记录
         */
         sqlite3NestedParse(pParse,
                            "INSERT INTO %Q.%s VALUES('index',%Q,%Q,#%d,%Q);",
@@ -3293,6 +3302,7 @@ Index *sqlite3CreateIndex(
         */
         if (pTblName)
         {
+            /* 填充索引的内容 */
             sqlite3RefillIndex(pParse, pIndex, iMem);
             sqlite3ChangeCookie(pParse, iDb);
             sqlite3VdbeAddParseSchemaOp(v, iDb,

@@ -107,12 +107,16 @@ typedef struct VdbeOpList VdbeOpList;
 ** Allowed values of VdbeOp.p4type
 */
 #define P4_NOTUSED    0   /* The P4 parameter is not used */
+/* 指向一个动态分配的字符串 */
 #define P4_DYNAMIC  (-1)  /* Pointer to a string obtained from sqliteMalloc() */
+/* 指向一个静态字符串 */
 #define P4_STATIC   (-2)  /* Pointer to a static string */
 #define P4_COLLSEQ  (-4)  /* P4 is a pointer to a CollSeq structure */
 #define P4_FUNCDEF  (-5)  /* P4 is a pointer to a FuncDef structure */
+/* P4是一个指向KeyInfo结构体的指针 */
 #define P4_KEYINFO  (-6)  /* P4 is a pointer to a KeyInfo structure */
 #define P4_VDBEFUNC (-7)  /* P4 is a pointer to a VdbeFunc structure */
+/* P4是一个指向Mem结构体的指针 */
 #define P4_MEM      (-8)  /* P4 is a pointer to a Mem*    structure */
 #define P4_TRANSIENT  0   /* P4 is a pointer to a transient string */
 #define P4_VTAB     (-10) /* P4 is a pointer to an sqlite3_vtab structure */

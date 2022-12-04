@@ -64,9 +64,11 @@ struct VdbeCursor
     Bool rowidIsValid;    /* True if lastRowid is valid */
     Bool atFirst;         /* True if pointing to first entry */
     Bool useRandomRowid;  /* Generate new record numbers semi-randomly */
+    /* 指向的行没有包含数据 */
     Bool nullRow;         /* True if pointing to a row with no data */
     Bool deferredMoveto;  /* A call to sqlite3BtreeMoveto() is needed */
     Bool isTable;         /* True if a table requiring integer keys */
+    /* 索引仅仅包含key,没有数据 */
     Bool isIndex;         /* True if an index containing keys only - no data */
     Bool isOrdered;       /* True if the underlying table is BTREE_UNORDERED */
     Bool isSorter;        /* True if a new-style sorter */
@@ -346,6 +348,7 @@ struct Vdbe
     u8 usesStmtJournal;     /* True if uses a statement journal */
     u8 readOnly;            /* True for read-only statements */
     u8 isPrepareV2;         /* True if prepared with prepare_v2() */
+    /* 上一次reset,数据库更改的数目 */
     int nChange;            /* Number of db changes made since last reset */
     yDbMask btreeMask;      /* Bitmask of db->aDb[] entries referenced */
     yDbMask lockMask;       /* Subset of btreeMask that requires a lock */

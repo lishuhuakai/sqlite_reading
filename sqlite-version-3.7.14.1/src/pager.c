@@ -441,6 +441,9 @@ int sqlite3PagerTrace = 1; /* True to enable tracing */
 ** immediately following the last journal record written into the main
 ** journal before the journal-header. This is required during savepoint
 ** rollback (see pagerPlaybackSavepoint()).
+** 当一个savepoint被创建,PagerSavepoint.iHdrOffset字段被设置为0,当savepoint还处于active
+** 状态的时候,一个新的日志头部被写入主日志,iHdrOffset被设置为此日志头部上一条日志记录尾部的偏移量.
+** 这个值在回滚savepoint的时候需要.
 */
 typedef struct PagerSavepoint PagerSavepoint;
 struct PagerSavepoint /* 保存点 */
@@ -449,6 +452,7 @@ struct PagerSavepoint /* 保存点 */
     i64 iOffset;                 /* Starting offset in main journal */
     i64 iHdrOffset;              /* See above */
     Bitvec *pInSavepoint;        /* Set of pages in this savepoint */
+    /* 文件的页的数目 */
     Pgno nOrig;                  /* Original number of pages in file */
     Pgno iSubRec;                /* Index of first record in sub-journal */
 #ifndef SQLITE_OMIT_WAL
@@ -777,6 +781,7 @@ static const unsigned char aJournalMagic[] =
 /*
 ** The journal header size for this pager. This is usually the same
 ** size as a single disk sector. See also setSectorSize().
+** 此pager的日志头部大小,这个值通常和单个磁盘扇区大小一致
 */
 #define JOURNAL_HDR_SZ(pPager) (pPager->sectorSize)
 
@@ -1029,10 +1034,14 @@ static char *print_pager_state(Pager *p)
 ** Return true if it is necessary to write page *pPg into the sub-journal.
 ** A page needs to be written into the sub-journal if there exists one
 ** or more open savepoints for which:
+** 如果有必要将页*pPg写入sub-journal的话,返回true,一个页有必要写入sub-journal,如果存在1个或者
+** 多个打开的savepoint,它们满足:
 **
 **   * The page-number is less than or equal to PagerSavepoint.nOrig, and
+**   * 页号小于或者等于PagerSavepoint.nOrig(这意味着,这一页是建立次savepoint之后新加的)并且
 **   * The bit corresponding to the page-number is not set in
 **     PagerSavepoint.pInSavepoint.
+**   * 页号对应的bit位没有在PagerSavepoint.pInSavepoint中设置,也就是这一页并不在savepoint之中
 */
 static int subjRequiresPage(PgHdr *pPg)
 {
@@ -1322,7 +1331,7 @@ static int readMasterJournal(sqlite3_file *pJrnl, char *zMaster, u32 nMaster)
 ** Return the offset of the sector boundary at or immediately
 ** following the value in pPager->journalOff, assuming a sector
 ** size of pPager->sectorSize bytes.
-** 返回sector的边界(sector大小的倍数),也就是Pager.journal所在的位置(恰好在边界上),
+** 返回sector的边界(sector大小的倍数),也就是Pager.journalOff所在的位置(恰好在边界上),
 ** 或者在其之后,与其最接近的边界的位置.
 ** 下面是一个简单的例子
 **
@@ -1688,6 +1697,8 @@ static int readJournalHdr(
 ** thing written to a journal file. If the pager is in full-sync mode, the
 ** journal file descriptor is advanced to the next sector boundary before
 ** anything is written. The format is:
+** 将提供的日志名称写入日志文件.主日志的名称必须是最后一个写入日志文件的东西,如果pager处于
+** full-sync模式,那么日志文件描述符的偏移将会移动到下一个扇区,在写入任何东西之前.
 **
 **   + 4 bytes: PAGER_MJ_PGNO.
 **   + N bytes: Master journal filename in utf-8.
@@ -1732,6 +1743,7 @@ static int writeMasterJournal(Pager *pPager, const char *zMaster)
     /* If in full-sync mode, advance to the next disk sector before writing
     ** the master journal name. This is in case the previous page written to
     ** the journal has already been synced.
+    ** 如果处于full-sync模式,将偏移移动到下一个扇区.在写日志文件名称之前.
     */
     if (pPager->fullSync)
     {
@@ -1802,6 +1814,8 @@ static void pager_reset(Pager *pPager)
 ** Free all structures in the Pager.aSavepoint[] array and set both
 ** Pager.aSavepoint and Pager.nSavepoint to zero. Close the sub-journal
 ** if it is open and the pager is not in exclusive mode.
+** 释放掉Pager.aSavepoint[]中的所有结构,将Pager.aSavepoint以及Pager.nSavepoint设置为0
+** 关闭打开的sub-journal,pager不再处于exclusive模式(排他模式)
 */
 static void releaseAllSavepoints(Pager *pPager)
 {
@@ -1983,12 +1997,16 @@ static int pager_error(Pager *pPager, int rc)
 ** after rollback of a hot-journal, or if an error occurs while opening
 ** the journal file or writing the very first journal-header of a
 ** database transaction.
+** 此函数完成事务,一个事务的终结,要么通过COMMIT,要么通过ROLLBACK.
 **
 ** This routine is never called in PAGER_ERROR state. If it is called
 ** in PAGER_NONE or PAGER_SHARED state and the lock held is less
 ** exclusive than a RESERVED lock, it is a no-op.
+** 此函数永远不会在pager处于PAGER_ERROR的时候被调用,如果它处于PAGER_NONE或者PAGER_SHARED,
+** 而且锁的级别低于RESERVED,那么什么也不干.
 **
 ** Otherwise, any active savepoints are released.
+** 否则的话,所有处于active状态的savepoints将会被释放.
 **
 ** If the journal file is open, then it is "finalized". Once a journal
 ** file has been finalized it is not possible to use it to roll back a
@@ -2020,6 +2038,7 @@ static int pager_error(Pager *pPager, int rc)
 ** After the journal is finalized, the pager moves to PAGER_READER state.
 ** If running in non-exclusive rollback mode, the lock on the file is
 ** downgraded to a SHARED_LOCK.
+** 在日志被finalize之后,pager切换到PAGER_READER状态.
 **
 ** SQLITE_OK is returned if no error occurs. If an error occurs during
 ** any of the IO operations to finalize the journal file or unlock the
@@ -2055,7 +2074,7 @@ static int pager_end_transaction(Pager *pPager, int hasMaster)
         return SQLITE_OK;
     }
 
-    releaseAllSavepoints(pPager);
+    releaseAllSavepoints(pPager); /* 释放掉所有的savepoint */
     assert(isOpen(pPager->jfd) || pPager->pInJournal == 0);
     if (isOpen(pPager->jfd))
     {
@@ -2075,7 +2094,7 @@ static int pager_end_transaction(Pager *pPager, int hasMaster)
             }
             else
             {
-                rc = sqlite3OsTruncate(pPager->jfd, 0);
+                rc = sqlite3OsTruncate(pPager->jfd, 0); /* 截断日志文件 */
             }
             pPager->journalOff = 0;
         }
@@ -2236,13 +2255,17 @@ static void pagerReportSize(Pager *pPager)
 ** from the sub-journal (if isMainJrnl==0) and playback that page.
 ** The page begins at offset *pOffset into the file. The *pOffset
 ** value is increased to the start of the next page in the journal.
+** 要么从日志文件,要么从子日志文件中读取一页,然后回放,页开始于偏移*pOffset的位置.
+** *pOffset的值会增加,指向日志中的下一页开始的位置.
 **
 ** The main rollback journal uses checksums - the statement journal does
 ** not.
+** 主回滚日志使用checksum,statement日志并不使用.
 **
 ** If the page number of the page record read from the (sub-)journal file
 ** is greater than the current value of Pager.dbSize, then playback is
 ** skipped and SQLITE_OK is returned.
+** 如果从(sub-)日志文件中读取的页的页号比当前Pager.dbSize要大,那么回放会被跳过,返回SQLITE_OK.
 **
 ** If pDone is not NULL, then it is a record of pages that have already
 ** been played back.  If the page at *pOffset has already been played back
@@ -2317,7 +2340,7 @@ static int pager_playback_one_page(
     */
     rc = read32bits(jfd, *pOffset, &pgno); /* 读取页号 */
     if (rc != SQLITE_OK) return rc;
-    /* 读取对应的数据至aData中 */
+    /* 读取对应的页的数据至aData中 */
     rc = sqlite3OsRead(jfd, (u8*)aData, pPager->pageSize, (*pOffset) + 4);
     if (rc != SQLITE_OK) return rc;
     *pOffset += pPager->pageSize + 4 + isMainJrnl * 4;
@@ -2367,6 +2390,8 @@ static int pager_playback_one_page(
     /* If the pager is in CACHEMOD state, then there must be a copy of this
     ** page in the pager cache. In this case just update the pager cache,
     ** not the database file. The page is left marked dirty in this case.
+    ** 如果pager处于CACHEMOD状态,那么pager缓存中肯定存在该页的一份拷贝,在这种情况下,只需要
+    ** 更新pager缓存,而不是数据库文件,将页标记为dirty.
     **
     ** An exception to the above rule: If the database is in no-sync mode
     ** and a page is moved during an incremental vacuum then the page may
@@ -2380,6 +2405,9 @@ static int pager_playback_one_page(
     ** not dirty. Since this code is only executed in PAGER_OPEN state for
     ** a hot-journal rollback, it is guaranteed that the page-cache is empty
     ** if the pager is in OPEN state.
+    ** 如果处于WRITER_DBMOD,WRITER_FINISHED以及OPEN状态,如果缓存存在的话,我们需要更新pager缓存.
+    ** 将页标记为not dirty.因为这段代码仅仅值服务一个hot-journal的回滚,只在PAGER_OPEN状态下会执行.
+    ** 如果pager处于OPEN状态,可以保证,page缓存为空.
     **
     ** Ticket #1171:  The statement journal might contain page content that is
     ** different from the page content at the start of the transaction.
@@ -2783,13 +2811,17 @@ static void setSectorSize(Pager *pPager)
 /*
 ** Playback the journal and thus restore the database file to
 ** the state it was in before we started making changes.
+** 回放日志,从而将数据库文件恢复到我们进行更改之前的状态.
 **
 ** The journal file format is as follows:
+** 日志文件的格式如下:
 **
 **  (1)  8 byte prefix.  A copy of aJournalMagic[].
 **  (2)  4 byte big-endian integer which is the number of valid page records
 **       in the journal.  If this value is 0xffffffff, then compute the
 **       number of page records from the journal size.
+**      4字节大端的整数,用于表示日志中有效的页记录的数目,如果这个值为0xffffffff,那么页记录
+**      的数目,需要通过日志大小来计算.
 **  (3)  4 byte big-endian integer which is the initial value for the
 **       sanity checksum.
 **  (4)  4 byte integer which is the number of pages to truncate the
@@ -2805,6 +2837,7 @@ static void setSectorSize(Pager *pPager)
 **
 ** When we speak of the journal header, we mean the first 7 items above.
 ** Each entry in the journal is an instance of the 8th item.
+** 当我们说道日志头部的时候,我们说的是以上的前7个条目,日志里的每一条记录都是第8个条目的实例.
 **
 ** Call the value from the second bullet "nRec".  nRec is the number of
 ** valid page entries in the journal.  In most cases, you can compute the
@@ -2894,6 +2927,8 @@ static int pager_playback(Pager *pPager, int isHot)
         ** not enough bytes left in the journal file for a complete header, or
         ** it is corrupted, then a process must have failed while writing it.
         ** This indicates nothing more needs to be rolled back.
+        ** 从日志文件中读取下一条日志头部,如果日志文件剩余的空间不足矣容纳一个完整的头部,或者
+        ** 日志文件损坏,那么说明当进程在写这个数据的时候是表了,这意味着我们无需回滚.
         */
         rc = readJournalHdr(pPager, isHot, szJ, &nRec, &mxPg);
         if (rc != SQLITE_OK)
@@ -2909,6 +2944,8 @@ static int pager_playback(Pager *pPager, int isHot)
         ** working in no-sync mode. This means that the rest of the journal
         ** file consists of pages, there are no more journal headers. Compute
         ** the value of nRec based on this assumption.
+        ** 如果nRec为0xffffffff,那么说明这个日志是一个处于no-sync模式的进程创建的,这意味着
+        ** 日志文件剩余内容都是日志记录,没有更多的日志头.
         */
         if (nRec == 0xffffffff)
         {
@@ -2921,6 +2958,8 @@ static int pager_playback(Pager *pPager, int isHot)
         ** that this part of the journal was being filled but has not yet been
         ** synced to disk.  Compute the number of pages based on the remaining
         ** size of the file.
+        ** 如果nRec为0,并且事务的回滚通过此进程,如果这是日志的最后一个头部,这意味着
+        ** 日志的这部分还没有来得及同步到磁盘,通过文件剩余部分的大小来计算page的数目.
         **
         ** The third term of the test was added to fix ticket #2565.
         ** When rolling back a hot journal, nRec==0 always means that the next
@@ -2932,12 +2971,13 @@ static int pager_playback(Pager *pPager, int isHot)
         */
         if (nRec == 0 && !isHot &&
             pPager->journalHdr + JOURNAL_HDR_SZ(pPager) == pPager->journalOff)
-        {
+        { /* 最后一个日志头部 */
             nRec = (int)((szJ - pPager->journalOff) / JOURNAL_PG_SZ(pPager));
         }
 
         /* If this is the first header read from the journal, truncate the
         ** database file back to its original size.
+        ** 如果这是从日志中读取的第一个头部,截断数据库文件到它原来的大小.
         */
         if (pPager->journalOff == JOURNAL_HDR_SZ(pPager))
         {
@@ -2951,6 +2991,7 @@ static int pager_playback(Pager *pPager, int isHot)
 
         /* Copy original pages out of the journal and back into the
         ** database file and/or page cache.
+        ** 从日志文件中拷贝原本的页数据到数据库文件/页缓存
         */
         for (u = 0; u < nRec; u++)
         {
@@ -3526,9 +3567,9 @@ static int pagerPlaybackSavepoint(Pager *pPager, PagerSavepoint *pSavepoint)
     assert(pPager->eState >= PAGER_WRITER_LOCKED);
 
     /* Allocate a bitvec to use to store the set of pages rolled back */
-    if (pSavepoint)
+    if (pSavepoint)  /* 创建一个位图结构,用于保存已经成功回滚的页的页号 */
     {
-        pDone = sqlite3BitvecCreate(pSavepoint->nOrig); /* 创建一个位图结构 */
+        pDone = sqlite3BitvecCreate(pSavepoint->nOrig);
         if (!pDone)
         {
             return SQLITE_NOMEM;
@@ -3537,7 +3578,7 @@ static int pagerPlaybackSavepoint(Pager *pPager, PagerSavepoint *pSavepoint)
 
     /* Set the database size back to the value it was before the savepoint
     ** being reverted was opened.
-    ** 将数据库的大小设置成savepoint之前的大小
+    ** 将数据库的大小设置成创建savepoint之前的大小
     */
     pPager->dbSize = pSavepoint ? pSavepoint->nOrig : pPager->dbOrigSize;
     pPager->changeCountDone = pPager->tempFile;
@@ -3562,7 +3603,7 @@ static int pagerPlaybackSavepoint(Pager *pPager, PagerSavepoint *pSavepoint)
     ** greater than the current database size (pPager->dbSize) but those
     ** will be skipped automatically.  Pages are added to pDone as they
     ** are played back.
-    ** 从main日志PagerSavepoint.iOffset开始的地方,一直到下一条日志的头部,回滚记录.
+    ** main日志PagerSavepoint.iOffset作为开始的地方,一直到下一条日志的头部,回滚记录.
     ** 有可能主日志中存在一个页号,大于当前数据库大小,这个会自动跳过.
     */
     if (pSavepoint && !pagerUseWal(pPager))
@@ -6229,11 +6270,16 @@ void sqlite3PagerDontWrite(PgHdr *pPg)
 ** change-counter, stored as a 4-byte big-endian integer starting at
 ** byte offset 24 of the pager file.  The secondary change counter at
 ** 92 is also updated, as is the SQLite version number at offset 96.
+** 此函数被调用,用于递增数据库文件的change-counter,它存储在pager文件偏移24字节的位置
+** 是一个4字节大小的大端整数.偏移92字节处的change counter,以及偏移96字节处的SQLite version
+** 同样也会更新.
 **
 ** But this only happens if the pPager->changeCountDone flag is false.
 ** To avoid excess churning of page 1, the update only happens once.
 ** See also the pager_write_changecounter() routine that does an
 ** unconditional update of the change counters.
+** 只有pPager->changeCountDone标记为false才会执行,为了避免在磁盘上对page 1多次写入,更新只
+** 有一次.
 **
 ** If the isDirectMode flag is zero, then this is done by calling
 ** sqlite3PagerWrite() on page 1, then modifying the contents of the
@@ -6280,13 +6326,14 @@ static int pager_incr_changecounter(Pager *pPager, int isDirectMode)
         assert(!pPager->tempFile && isOpen(pPager->fd));
 
         /* Open page 1 of the file for writing. */
-        rc = sqlite3PagerGet(pPager, 1, &pPgHdr);
+        rc = sqlite3PagerGet(pPager, 1, &pPgHdr); /* 获取第1页 */
         assert(pPgHdr == 0 || rc == SQLITE_OK);
 
         /* If page one was fetched successfully, and this function is not
         ** operating in direct-mode, make page 1 writable.  When not in
         ** direct mode, page 1 is always held in cache and hence the PagerGet()
         ** above is always successful - hence the ALWAYS on rc==SQLITE_OK.
+        ** 如果page1获取成功,那么说明此函数并没有运行在direct-mode,那么将page 1标记为可写.
         */
         if (!DIRECT_MODE && ALWAYS(rc == SQLITE_OK))
         {
@@ -6329,6 +6376,7 @@ static int pager_incr_changecounter(Pager *pPager, int isDirectMode)
 /*
 ** Sync the database file to disk. This is a no-op for in-memory databases
 ** or pages with the Pager.noSync flag set.
+** 同步数据库文件到磁盘.如果数据库为内存数据库,或者Pager.noSync标记被设置,此函数什么也不干.
 **
 ** If successful, or if called on a pager for which it is a no-op, this
 ** function returns SQLITE_OK. Otherwise, an IO error code is returned.
@@ -6391,10 +6439,15 @@ int sqlite3PagerExclusiveLock(Pager *pPager)
 ** 本函数保证:
 **
 **   * The database file change-counter is updated,
+**   * 数据库文件的change-counter将会被更新,
 **   * the journal is synced (unless the atomic-write optimization is used),
+**   * 日志会被同步(除非atomic-write优化被使用),
 **   * all dirty pages are written to the database file,
+**   * 所有的脏页都会被写入数据库文件,
 **   * the database file is truncated (if required), and
+**   * 数据库文件会被截断(如果需要的话),以及
 **   * the database file synced.
+**   * 数据库文件将会被同步(至磁盘).
 **
 ** The only thing that remains to commit the transaction is to finalize
 ** (delete, truncate or zero the first part of) the journal file (or
@@ -6471,6 +6524,8 @@ int sqlite3PagerCommitPhaseOne(
             ** does this depends on whether or not the atomic-update optimization
             ** was enabled at compile time, and if this transaction meets the
             ** runtime criteria to use the operation:
+            ** 接下来的块更新change-counter,它具体如何做取决于编译时atomic-update优化是否使能,
+            ** 如果此事务满足运行准则,使用以下的操作:
             **
             **    * The file-system supports the atomic-write property for
             **      blocks of size page-size, and
@@ -6579,7 +6634,7 @@ int sqlite3PagerCommitPhaseOne(
             */
             rc = syncJournal(pPager, 0);
             if (rc != SQLITE_OK) goto commit_phase_one_exit;
-
+            /* 将脏页写入磁盘 */
             rc = pager_write_pagelist(pPager, sqlite3PcacheDirtyList(pPager->pPCache));
             if (rc != SQLITE_OK)
             {
@@ -6623,6 +6678,8 @@ commit_phase_one_exit:
 ** synced to disk. The journal file still exists in the file-system
 ** though, and if a failure occurs at this point it will eventually
 ** be used as a hot-journal and the current transaction rolled back.
+** 当此函数被调用的时候,数据库文件已经完全被更新来反应当前事务造成的改变,日志文件存在于文件系统.
+** 如果在这个点发生了错误,将会导致回滚.
 **
 ** This function finalizes the journal file, either by deleting,
 ** truncating or partially zeroing it, so that it cannot be used
@@ -6678,18 +6735,24 @@ int sqlite3PagerCommitPhaseTwo(Pager *pPager)
 ** transaction are reverted and the current write-transaction is closed.
 ** The pager falls back to PAGER_READER state if successful, or PAGER_ERROR
 ** state if an error occurs.
+** 如果一个写事务打开,那么所有在这个事务中的更改都将被回滚,并且当前的写事务将会被关闭.pager将会
+** 回滚到PAGER_READER状态,如果成功的话,如果失败了,将转换到PAGER_ERROR状态.
 **
 ** If the pager is already in PAGER_ERROR state when this function is called,
 ** it returns Pager.errCode immediately. No work is performed in this case.
+** 如果当此函数被调用时,pager已经处在PAGER_ERROR状态,立刻返回Pager.errCode,什么也不做.
 **
 ** Otherwise, in rollback mode, this function performs two functions:
+** 否则,在回滚模式中,此函数做两件事情:
 **
 **   1) It rolls back the journal file, restoring all database file and
 **      in-memory cache pages to the state they were in when the transaction
 **      was opened, and
+**   1) 回滚日志文件,还原全部的数据库文件以及内存的缓存页到事务开始时的状态;
 **
 **   2) It finalizes the journal file, so that it is not used for hot
 **      rollback at any point in the future.
+**   2) 销毁日志文件
 **
 ** Finalization of the journal file (task 2) is only performed if the
 ** rollback is successful.
@@ -6698,7 +6761,8 @@ int sqlite3PagerCommitPhaseTwo(Pager *pPager)
 ** current transaction are either expelled from the cache or reverted to
 ** their pre-transaction state by re-reading data from the database or
 ** WAL files. The WAL transaction is then closed.
-** 回滚
+** 在WAL模式中,在当前事务中被修改过的所有包含数据的缓存记录要么从缓存中删除,要么恢复到事务
+** 之前的状态(通过重新从数据库或者WAL文件中读取数据),然后关闭WAL事务.
 */
 int sqlite3PagerRollback(Pager *pPager)
 {
@@ -6737,7 +6801,7 @@ int sqlite3PagerRollback(Pager *pPager)
     }
     else
     {
-        rc = pager_playback(pPager, 0);
+        rc = pager_playback(pPager, 0); /* 回滚改动的页的数据 */
     }
 
     assert(pPager->eState == PAGER_READER || rc != SQLITE_OK);
@@ -6897,7 +6961,7 @@ int sqlite3PagerOpenSavepoint(Pager *pPager, int nSavepoint)
                 aNew[ii].iOffset = JOURNAL_HDR_SZ(pPager); /* 开始的位置 */
             }
             aNew[ii].iSubRec = pPager->nSubRec;
-            /* 保存点中页的个数 */
+            /* pInSavepoint位图用于记录在次保存点之后,哪些page发生了更改. */
             aNew[ii].pInSavepoint = sqlite3BitvecCreate(pPager->dbSize);
             if (!aNew[ii].pInSavepoint)
             {
@@ -6920,27 +6984,37 @@ int sqlite3PagerOpenSavepoint(Pager *pPager, int nSavepoint)
 ** This function is called to rollback or release (commit) a savepoint.
 ** The savepoint to release or rollback need not be the most recently
 ** created savepoint.
+** 此函数被调用,用于回滚或者释放一个保存点.
 **
 ** Parameter op is always either SAVEPOINT_ROLLBACK or SAVEPOINT_RELEASE.
 ** If it is SAVEPOINT_RELEASE, then release and destroy the savepoint with
 ** index iSavepoint. If it is SAVEPOINT_ROLLBACK, then rollback all changes
 ** that have occurred since the specified savepoint was created.
+** 参数op要么是SAVEPOINT_ROLLBACK,要么是SAVEPOINT_RELEASE,如果是SAVEPOINT_RELEASE,
+** 那么释放以及销毁iSavepoint所指示的保存点.如果是SAVEPOINT_ROLLBACK,那么回滚保存点的改动.
 **
 ** The savepoint to rollback or release is identified by parameter
 ** iSavepoint. A value of 0 means to operate on the outermost savepoint
 ** (the first created). A value of (Pager.nSavepoint-1) means operate
 ** on the most recently created savepoint. If iSavepoint is greater than
 ** (Pager.nSavepoint-1), then this function is a no-op.
+** 要回滚或者释放的保存点通过参数iSavepoint来标识,如果值为0,标识要操作最外部的保存点,也就是第一个
+** 创建的保存点,如果值为Pager.nSavepoint-1, 那么表示要操作最新创建的保存点.如果iSavepoint
+** 大于Pager.nSavepoint-1,那么此函数什么也不做.
 **
 ** If a negative value is passed to this function, then the current
 ** transaction is rolled back. This is different to calling
 ** sqlite3PagerRollback() because this function does not terminate
 ** the transaction or unlock the database, it just restores the
 ** contents of the database to its original state.
+** 如果传入了一个负值,那么当前的事务会被回滚,这个和直接调用sqlite3PagerRollback()不同,因为
+** 这个函数并不终止事务或者解锁数据库,它只是回滚数据库的内容到它原来的状态.
 **
 ** In any case, all savepoints with an index greater than iSavepoint
 ** are destroyed. If this is a release operation (op==SAVEPOINT_RELEASE),
 ** then savepoint iSavepoint is also destroyed.
+** 无论如何,索引值大于iSavepoint的保存点都会被销毁,如果这是一个释放操作,那么iSavepoint保存点
+** 也会被销毁.
 **
 ** This function may return SQLITE_NOMEM if a memory allocation fails,
 ** or an IO error code if an IO error occurs while rolling back a

@@ -226,13 +226,13 @@ struct WhereAndInfo
 **
 ** If WhereMaskSet.ix[A]==B it means that The A-th bit of a Bitmask
 ** corresponds VDBE cursor number B.  The A-th bit of a bitmask is 1<<A.
-** 如果WHereMaskSet.ix[A]==B,这意味着,第A-th个比特对应这游标值B,在bitmask中第A-th
+** 如果WHereMaskSet.ix[A]==B,这意味着,第A-th个比特对应着游标值B,在bitmask中第A-th
 ** 个bit是1<<A.
 **
 ** For example, if the WHERE clause expression used these VDBE
 ** cursors:  4, 5, 8, 29, 57, 73.  Then the  WhereMaskSet structure
 ** would map those cursor numbers into bits 0 through 5.
-** 举一个例子,如果WHERE表达式使用了VDBE游标值4.5.8.29.57,73,那么WhereMaskSet结构
+** 举一个例子,如果WHERE表达式使用了VDBE游标值4,5,8,29,57,73,那么WhereMaskSet结构
 ** 将会将这些值映射到0-5
 **
 ** Note that the mapping is not necessarily ordered.  In the example
@@ -259,6 +259,7 @@ struct WhereCost
 {
     WherePlan plan;    /* The lookup strategy */
     double rCost;      /* Overall cost of pursuing this search strategy */
+    /* 此计划中使用到的索引构成的位图 */
     Bitmask used;      /* Bitmask of cursors used by this plan */
 };
 
@@ -717,7 +718,7 @@ static WhereTerm *findTerm(
     WhereClause *pWC,     /* The WHERE clause to be searched */
     /* 左操作数的游标值 */
     int iCur,             /* Cursor number of LHS */
-    /* 列在表中的下标 */
+    /* (左操作数)列在表中的下标 */
     int iColumn,          /* Column number of LHS */
     /* notReady表示不允许使用的索引构成的位图,每一个bit都代表一个索引 */
     Bitmask notReady,     /* RHS must not overlap with this mask */
@@ -734,9 +735,9 @@ static WhereTerm *findTerm(
     {
         for (pTerm = pWC->a, k = pWC->nTerm; k; k--, pTerm++) /* 遍历where中的term */
         {
-            if (pTerm->leftCursor == iCur /* cursor匹配 */
+            if (pTerm->leftCursor == iCur /* iCur与leftCursor匹配,说明左操作数X确实属于iCur对应的表 */
                 && (pTerm->prereqRight & notReady) == 0 /* 索引不允许重叠, */
-                && pTerm->u.leftColumn == iColumn /* column匹配 */
+                && pTerm->u.leftColumn == iColumn /* 左操作数X所属的列和iColumn匹配 */
                 && (pTerm->eOperator & op) != 0 /* 操作符匹配 */
                )
             {
@@ -762,7 +763,7 @@ static WhereTerm *findTerm(
                     /* 保证可以在iColumn对应的列上使用索引
                     ** 或者说,索引pIdx中有iColumn这列
                     */
-                    for (j = 0; pIdx->aiColumn[j] != iColumn; j++)
+                    for (j = 0; pIdx->aiColumn[j] != iColumn; j++) /* 遍历索引中包含的列 */
                     {
                         /* 如果pIdx对应的索引没有iColumn指示的这一列的话,会返回NULL */
                         if (NEVER(j >= pIdx->nColumn)) return 0;
@@ -1349,6 +1350,7 @@ static void exprAnalyzeOrTerm(
 static void exprAnalyze(
     SrcList *pSrc,            /* the FROM clause */
     WhereClause *pWC,         /* the WHERE clause */
+    /* 带分析的term的索引 */
     int idxTerm               /* Index of the term to be analyzed */
 )
 {
@@ -1398,7 +1400,7 @@ static void exprAnalyze(
     {
         pTerm->prereqRight = exprTableUsage(pMaskSet, pExpr->pRight);
     }
-    prereqAll = exprTableUsage(pMaskSet, pExpr);
+    prereqAll = exprTableUsage(pMaskSet, pExpr); /* Expr所引用的表,包含prereqRight以及prereqLeft */
     if (ExprHasProperty(pExpr, EP_FromJoin))
     {
         Bitmask x = getMask(pMaskSet, pExpr->iRightJoinTable);
@@ -3334,7 +3336,7 @@ static int whereInScanEst(
 ** The lowest cost plan wins.  The cost is an estimate of the amount of
 ** CPU and disk I/O needed to process the requested result.
 ** Factors that influence cost include:
-** 开销最小的计划最好,
+** 开销最小的计划最好,开销是对请求结果所消耗的cpu以及磁盘IO的估计.影响因素如下:
 **
 **    *  The estimated number of rows that will be retrieved.  (The
 **       fewer the better.) -- 估计要获取的行的数目,越少越好
@@ -3343,6 +3345,7 @@ static int whereInScanEst(
 **
 **    *  Whether or not there must be separate lookups in the
 **       index and in the main table.
+**       
 **
 ** If there was an INDEXED BY clause (pSrc->pIndex) attached to the table in
 ** the SQL statement, then this function only considers plans using the
@@ -3429,7 +3432,7 @@ static void bestBtreeIndex(
         */
         Index *pFirst;                  /* First of real indices on the table */
         memset(&sPk, 0, sizeof(Index));
-        sPk.nColumn = 1;
+        sPk.nColumn = 1; /* 索引仅有一个元素 */
         sPk.aiColumn = &aiColumnPk;
         sPk.aiRowEst = aiRowEstPk;
         sPk.onError = OE_Replace;
@@ -3468,6 +3471,7 @@ static void bestBtreeIndex(
         /* The following variables are populated based on the properties of
         ** index being evaluated. They are then used to determine the expected
         ** cost and number of rows returned.
+        ** 下面这些变量根据被考虑的索引的性质被考量,它们被用来确定开销以及结果返回的行数.
         **
         **  nEq:
         **    Number of equality terms that can be implemented using the index.
@@ -3554,11 +3558,18 @@ static void bestBtreeIndex(
         /* Determine the values of nEq and nInMul
         ** 确定nEq与nInMul的值
         */
-        for (nEq = 0; nEq < pProbe->nColumn; nEq++) /* 遍历索引中的列 */
+        for (nEq = 0; nEq < pProbe->nColumn; nEq++) /* 遍历索引中的包含的列 */
         {
             int j = pProbe->aiColumn[nEq]; /* 列在表中的偏移 */
             /* 找到一个可以使用此索引的term */
             pTerm = findTerm(pWC, iCur, j, notReady, eqTermMask, pIdx);
+            /* 这里隐藏了一个有意思的点,假定有一个索引index(a,b,c,d),如果where中仅有一个等式限定b in (..)
+            ** 这种限定实际上是无法使用这个索引的,可以使用索引的限定,必须满足以下条件:
+            ** a的等值/范围限定都可以使用此索引 ---- 1
+            ** 在1成立的情况下,b的等值/范围限定才能使用此索引 ---- 2
+            ** 在1,2成立的情况下,c的等值/范围限定才能使用此索引 ---- 3
+            ** ...
+            */
             if (pTerm == 0) break; /* 如果找不到term,就退出,这里有一点需要注意,如果有这样一个索引index(a,b,c,d)
                                     ** a,b,c都被类似于a in (...), b == 2之类的term使用了,但是d没有被使用
                                     ** 那么nEq为3
@@ -3690,11 +3701,11 @@ static void bestBtreeIndex(
             }
             if (m == 0)
             {
-                wsFlags |= WHERE_IDX_ONLY; /* 所有数据都可以从索引中获得 */
+                wsFlags |= WHERE_IDX_ONLY; /* 所有数据都可以从索引中获得,无需查找原始表 */
             }
             else
             {
-                bLookup = 1;
+                bLookup = 1; /* 所需要的数据并不能完全从索引中获得,也就是需要继续查找原始表 */
             }
         }
 
@@ -3916,7 +3927,7 @@ static void bestBtreeIndex(
         {
             pCost->rCost = cost;
             pCost->used = used;
-            pCost->plan.nRow = nRow;
+            pCost->plan.nRow = nRow; /* 估算结果的行数 */
             pCost->plan.wsFlags = (wsFlags & wsFlagMask);
             pCost->plan.nEq = nEq;
             pCost->plan.u.pIdx = pIdx; /* 记录下来,使用哪一个索引 */
@@ -4512,6 +4523,7 @@ static Bitmask codeOneLoopStart(
     int addrNxt;         /* Where to jump to continue with the next IN case */
     /* 仅仅使用索引即可,无需扫描表 */
     int omitTable;       /* True if we use the index only */
+    /* 如果需要以相反的顺序来扫描的话,bRev为true */
     int bRev;            /* True if we need to scan in reverse order */
     WhereLevel *pLevel;  /* The where level to be coded */
     WhereClause *pWC;    /* Decomposition of the entire WHERE clause */
@@ -4612,7 +4624,7 @@ static Bitmask codeOneLoopStart(
     else
 #endif /* SQLITE_OMIT_VIRTUALTABLE */
 
-        if (pLevel->plan.wsFlags & WHERE_ROWID_EQ)
+        if (pLevel->plan.wsFlags & WHERE_ROWID_EQ) /* rowid=ExPR 0r rowid in (...) */
         {
             /* Case 1:  We can directly reference a single row using an
             **          equality comparison against the ROWID field.  Or
@@ -4662,7 +4674,7 @@ static Bitmask codeOneLoopStart(
                 pStart = pEnd;
                 pEnd = pTerm;
             }
-            if (pStart)
+            if (pStart) /* 下限 */
             {
                 Expr *pX;             /* The expression that defines the start bound */
                 int r1, rTemp;        /* Registers for holding the start boundary */
@@ -4685,7 +4697,7 @@ static Bitmask codeOneLoopStart(
                 pX = pStart->pExpr;
                 assert(pX != 0);
                 assert(pStart->leftCursor == iCur);
-                /* 表达式的结构放入r1寄存器 */
+                /* 右操作数的表达式的结果放入寄存器r1 */
                 r1 = sqlite3ExprCodeTemp(pParse, pX->pRight, &rTemp);
                 /* 进行比较操作,不匹配,跳转到addrBrk */
                 sqlite3VdbeAddOp3(v, aMoveOp[pX->op - TK_GT], iCur, addrBrk, r1);
@@ -4698,7 +4710,7 @@ static Bitmask codeOneLoopStart(
             {
                 sqlite3VdbeAddOp2(v, bRev ? OP_Last : OP_Rewind, iCur, addrBrk);
             }
-            if (pEnd)
+            if (pEnd) /* 上限 */
             {
                 Expr *pX;
                 pX = pEnd->pExpr;
@@ -4706,6 +4718,7 @@ static Bitmask codeOneLoopStart(
                 assert(pEnd->leftCursor == iCur);
                 testcase(pEnd->wtFlags & TERM_VIRTUAL);   /* EV: R-30575-11662 */
                 memEndValue = ++pParse->nMem;
+                /* 右操作数的表达式的计算结果放入寄存器memEndValue */
                 sqlite3ExprCode(pParse, pX->pRight, memEndValue);
                 if (pX->op == TK_LT || pX->op == TK_GT)
                 {
@@ -4752,8 +4765,9 @@ static Bitmask codeOneLoopStart(
             **         index is on (x,y,z), then the following clauses are all
             **         optimized:
             **         WHERE中可能包含0个或者多个等式(==或者IN),它们引用了索引中的N个left-most
-            **         的column, 也有可能包含不等式(>,<,>=,<=),作用在被索引的列上,
-            **         只有right-most的column才能限定不等式,其余的必须采用==或者IN来限定
+            **         的column, 也有可能包含不等式(>,<,>=,<=),它们引用了索引中紧跟在N个
+            **         left-most的column之后的column(仅仅1个).
+            **         只有在right-most的column才能使用不等式项,其余的column必须采用==或者IN来限定.
             **         在(x,y,z)上有索引:
             **
             **            x=5
@@ -4800,8 +4814,11 @@ static Bitmask codeOneLoopStart(
             int r1;                      /* Temp register */
             WhereTerm *pRangeStart = 0;  /* Inequality constraint at range start */
             WhereTerm *pRangeEnd = 0;    /* Inequality constraint at range end */
+            /* 如果范围的开始使用==,>=或者<=来限定,startEq为true */
             int startEq;                 /* True if range start uses ==, >= or <= */
+            /* 如果范围的结束使用==,>=或者<=来限定,endEq为true */
             int endEq;                   /* True if range end uses ==, >= or <= */
+            /* 范围的开始位置 */
             int start_constraints;       /* Start of range is constrained */
             int nConstraint;             /* Number of constraint terms */
             Index *pIdx;                 /* The index we will be using */
@@ -4837,12 +4854,12 @@ static Bitmask codeOneLoopStart(
             /* Find any inequality constraint terms for the start and end
             ** of the range.
             */
-            if (pLevel->plan.wsFlags & WHERE_TOP_LIMIT)
+            if (pLevel->plan.wsFlags & WHERE_TOP_LIMIT) /* 存在x<EXPR或者x<=EXPR限定 */
             {
                 pRangeEnd = findTerm(pWC, iCur, k, notReady, (WO_LT | WO_LE), pIdx);
                 nExtraReg = 1;
             }
-            if (pLevel->plan.wsFlags & WHERE_BTM_LIMIT)
+            if (pLevel->plan.wsFlags & WHERE_BTM_LIMIT) /* 存在x>EXPR或者x>=EXPR限定 */
             {
                 pRangeStart = findTerm(pWC, iCur, k, notReady, (WO_GT | WO_GE), pIdx);
                 nExtraReg = 1;
@@ -4880,10 +4897,11 @@ static Bitmask codeOneLoopStart(
             start_constraints = pRangeStart || nEq > 0;
 
             /* Seek the index cursor to the start of the range. */
-            nConstraint = nEq;
+            nConstraint = nEq; /* 将索引游标移动到范围的起始位置 */
             if (pRangeStart) /* 下限 */
             {
                 Expr *pRight = pRangeStart->pExpr->pRight;
+                /* 为右操作数的表达式生成代码,计算结果放入寄存器regBase+nEq */
                 sqlite3ExprCode(pParse, pRight, regBase + nEq);
                 if ((pRangeStart->wtFlags & TERM_VNULL) == 0)
                 {
@@ -4929,7 +4947,7 @@ static Bitmask codeOneLoopStart(
             ** range (if any).
             */
             nConstraint = nEq;
-            if (pRangeEnd)
+            if (pRangeEnd) /* 上限 */
             {
                 Expr *pRight = pRangeEnd->pExpr->pRight;
                 sqlite3ExprCacheRemove(pParse, regBase + nEq, 1);
@@ -5509,6 +5527,7 @@ WhereInfo *sqlite3WhereBegin(
     int nTabList;              /* Number of elements in pTabList */
     WhereInfo *pWInfo;         /* Will become the return value of this function */
     Vdbe *v = pParse->pVdbe;   /* The virtual database engine */
+    /* 记录那些还没有确定遍历次序的表 */
     Bitmask notReady;          /* Cursors that are not yet positioned */
     WhereMaskSet *pMaskSet;    /* The expression mask set */
     WhereClause *pWC;               /* Decomposition of the WHERE clause */
@@ -5601,8 +5620,8 @@ WhereInfo *sqlite3WhereBegin(
     ** of the join.  Subtracting one from the right table bitmask gives a
     ** bitmask for all tables to the left of the join.  Knowing the bitmask
     ** for all tables to the left of a left join is important.  Ticket #3015.
-    ** 当给FROM子句的游标分配bitmask的时候,
-    ** X是第N个from子句
+    ** 当给FROM条目的游标分配bitmask的时候,如果X是第N个from条目的bitmask,则所有在第N个
+    ** from条目左侧的条目的bitmask为(X-1).
     **
     ** Configure the WhereClause.vmask variable so that bits that correspond
     ** to virtual table cursors are set. This is used to selectively disable
@@ -5617,8 +5636,8 @@ WhereInfo *sqlite3WhereBegin(
     assert(pWC->vmask == 0 && pMaskSet->n == 0);
     for (i = 0; i < pTabList->nSrc; i++) /* 遍历表以及子查询 */
     {
-        /* 游标在某种程度上也可以代表一张表
-        ** 所有表的游标值不可能重复
+        /* 表的游标在某种程度上也可以代表一张表,这里隐含了一个条件:
+        ** 数据库中所有表的游标值不可能重复
         */
         createMask(pMaskSet, pTabList->a[i].iCursor); /* 构建好映射关系 */
 #ifndef SQLITE_OMIT_VIRTUALTABLE
@@ -5673,20 +5692,20 @@ WhereInfo *sqlite3WhereBegin(
     **   pWInfo->a[].pIdx      The index to use for this level of the loop. -- 使用的索引
     **   pWInfo->a[].wsFlags   WHERE_xxx flags associated with pIdx
     **   pWInfo->a[].nEq       The number of == and IN constraints -- ==以及IN限定的个数
-    **   pWInfo->a[].iFrom     Which term of the FROM clause is being coded --需要翻译哪一个语句
-    **   pWInfo->a[].iTabCur   The VDBE cursor for the database table --VDBE游标
-    **   pWInfo->a[].iIdxCur   The VDBE cursor for the index
+    **   pWInfo->a[].iFrom     Which term of the FROM clause is being coded -- 需要翻译哪一个from条目
+    **   pWInfo->a[].iTabCur   The VDBE cursor for the database table -- 表的VDBE游标
+    **   pWInfo->a[].iIdxCur   The VDBE cursor for the index          -- 索引的VDBE游标
     **   pWInfo->a[].pTerm     When wsFlags==WO_OR, the OR-clause term
     **
     ** This loop also figures out the nesting order of tables in the FROM
     ** clause.
-    ** 此函数推算出计算的顺序
+    ** 此函数推算出计算的顺序,怎样遍历表,才能更加高效.
     */
-    notReady = ~(Bitmask)0;
+    notReady = ~(Bitmask)0; /* 开始循环之前,所有表的遍历次序都没有确定 */
     andFlags = ~0;
     WHERETRACE(("*** Optimizer Start ***\n"));
-    for (i = iFrom = 0, pLevel = pWInfo->a; i < nTabList; i++, pLevel++)
-    {
+    for (i = iFrom = 0, pLevel = pWInfo->a; i < nTabList; i++, pLevel++) /* 一般而言,几张表就要循环几层 */
+    { /* i为0,表示从最里层的循环开始 */
         /* 当前遇到过的最优的查询计划 */
         WhereCost bestPlan;         /* Most efficient plan seen so far */
         Index *pIdx;                /* Index for FROM table at pTabItem */
@@ -5695,6 +5714,7 @@ WhereInfo *sqlite3WhereBegin(
         Bitmask m;                  /* Bitmask value for j or bestJ */
         int isOptimal;              /* Iterator for optimal/non-optimal search */
         int nUnconstrained;         /* Number tables without INDEXED BY */
+        /* 不能使用索引的表的掩码 */
         Bitmask notIndexed;         /* Mask of tables that cannot use an index */
 
         memset(&bestPlan, 0, sizeof(bestPlan));
@@ -5718,8 +5738,11 @@ WhereInfo *sqlite3WhereBegin(
         ** its query plan, then checking to see if that query plan uses any
         ** other FROM clause terms that are notReady.  If no notReady terms are
         ** used then the "optimal" query plan works.
-        ** 如果余下的entry中还有两个或者多个,
-        ** 第一轮测试寻找最优的扫描,
+        ** 如果余下的entry中还有两个或者更多条目,那么第一轮测试是一定要执行的.如果仅有一个from条目
+        ** 第一轮测试则不用进行.第一轮测试寻找最优的扫描.在这种情况下,一个最优的扫描,指的是
+        **  可以用作最内层的循环,换句话说,使用其他表作为最内层的循环并不能减小运行的开销.
+        ** 最优的测试,先让选定的from条目(表)运行在最里层的循环,然后构建它的查询计划,
+        ** 然后检查查询计划是否使用了其他没有被选定的from条目,如果没有的话,那么最优查询计划是生效的.
         **
         ** Note that the WhereCost.nRow parameter for an optimal scan might
         ** not be as small as it would be if the table really were the innermost
@@ -5732,6 +5755,7 @@ WhereInfo *sqlite3WhereBegin(
         ** The second loop iteration is only performed if no optimal scan
         ** strategies were found by the first iteration. This second iteration
         ** is used to search for the lowest cost scan overall.
+        ** 第二轮循环会执行,仅当第一轮循环找不到最优化的扫描策略,第二轮循环用于查询全局扫描的最小开销.
         **
         ** Previous versions of SQLite performed only the second iteration -
         ** the next outermost loop was always that with the lowest overall
@@ -5752,12 +5776,13 @@ WhereInfo *sqlite3WhereBegin(
         ** 上线性扫描,开销和在表t1上扫描是一样的.贪心算法可能选择先遍历t2
         */
         nUnconstrained = 0;
-        notIndexed = 0;
+        notIndexed = 0; /* 确定每一层之前,都要重置notIndexed */
         for (isOptimal = (iFrom < nTabList - 1); isOptimal >= 0 && bestJ < 0; isOptimal--)
         {
             Bitmask mask;             /* Mask of tables not yet ready */
             for (j = iFrom, pTabItem = &pTabList->a[j]; j < nTabList; j++, pTabItem++) /* 遍历表 */
             {
+                /* 如果为true的话,扫描表的顺序不应当被调整 */
                 int doNotReorder;    /* True if this table should not be reordered */
                 WhereCost sCost;     /* Cost information from best[Virtual]Index() */
                 ExprList *pOrderBy;  /* ORDER BY clause for index to optimize */
@@ -5766,7 +5791,7 @@ WhereInfo *sqlite3WhereBegin(
                 doNotReorder = (pTabItem->jointype & (JT_LEFT | JT_CROSS)) != 0;
                 if (j != iFrom && doNotReorder) break;
                 m = getMask(pMaskSet, pTabItem->iCursor);
-                if ((m & notReady) == 0)
+                if ((m & notReady) == 0) /* 表pTabItem的遍历次序已经确定好了,忽略这张表 */
                 {
                     if (j == iFrom) iFrom++;
                     continue;
@@ -5774,7 +5799,7 @@ WhereInfo *sqlite3WhereBegin(
                 mask = (isOptimal ? m : notReady);
                 pOrderBy = ((i == 0 && ppOrderBy) ? *ppOrderBy : 0);
                 pDist = (i == 0 ? pDistinct : 0);
-                if (pTabItem->pIndex == 0) nUnconstrained++;
+                if (pTabItem->pIndex == 0) nUnconstrained++; /* sql语句中没有用indexed by限定所使用的索引 */
 
                 WHERETRACE(("=== trying table %d with isOptimal=%d ===\n",
                             j, isOptimal));
@@ -5804,6 +5829,10 @@ WhereInfo *sqlite3WhereBegin(
                 if (isOptimal &&
                     (sCost.plan.wsFlags & WHERE_NOT_FULLSCAN) == 0) /* 需要全表扫描 */
                 {
+                    /* 处理完一张表之后,只要最终结果不是全表扫描,它的默认索引(大概是rowid构建的索引)
+                    ** 就会被加入notIndexed位图
+                    ** 告诉后续处理,不允许再使用这个索引
+                    */
                     notIndexed |= m; /* 无需使用此索引 */
                 }
 
@@ -5885,6 +5914,7 @@ WhereInfo *sqlite3WhereBegin(
         {
             pLevel->iIdxCur = -1;
         }
+        /* notReady位图中移除pTabList->a[bestJ]这张表,表示这张表的遍历次序已经确定 */
         notReady &= ~getMask(pMaskSet, pTabList->a[bestJ].iCursor);
         pLevel->iFrom = (u8)bestJ;
         if (bestPlan.plan.nRow >= (double)1)
@@ -5942,6 +5972,7 @@ WhereInfo *sqlite3WhereBegin(
 
     /* Open all tables in the pTabList and any indices selected for
     ** searching those tables.
+    ** 打开pTabList中涉及的所有表,以及所有被选中的索引.
     */
     sqlite3CodeVerifySchema(pParse, -1); /* Insert the cookie verifier Goto */
     notReady = ~(Bitmask)0;
@@ -5970,10 +6001,10 @@ WhereInfo *sqlite3WhereBegin(
             }
             else
 #endif
-                if ((pLevel->plan.wsFlags & WHERE_IDX_ONLY) == 0 /* 需要扫描表 */
+                if ((pLevel->plan.wsFlags & WHERE_IDX_ONLY) == 0 /* 需要从原始表中获取数据 */
                     && (wctrlFlags & WHERE_OMIT_OPEN_CLOSE) == 0)
                 {
-                    /* 打开表 */
+                    /* 打开原始表 */
                     int op = pWInfo->okOnePass ? OP_OpenWrite : OP_OpenRead;
                     sqlite3OpenTable(pParse, pTabItem->iCursor, iDb, pTab, op);
                     testcase(pTab->nCol == BMS - 1);
@@ -6006,6 +6037,7 @@ WhereInfo *sqlite3WhereBegin(
                 int iIndexCur = pLevel->iIdxCur;
                 assert(pIx->pSchema == pTab->pSchema);
                 assert(iIndexCur >= 0);
+                /* 打开索引 */
                 sqlite3VdbeAddOp4(v, OP_OpenRead, iIndexCur, pIx->tnum, iDb,
                                   (char*)pKey, P4_KEYINFO_HANDOFF);
                 VdbeComment((v, "%s", pIx->zName));

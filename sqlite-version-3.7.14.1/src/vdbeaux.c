@@ -2423,8 +2423,10 @@ int sqlite3VdbeHalt(Vdbe *p)
     /* This function contains the logic that determines if a statement or
     ** transaction will be committed or rolled back as a result of the
     ** execution of this virtual machine.
+    ** 此函数包含这样的逻辑,可以用来确定一个语句或者一个事务是否应当提交或者回滚
     **
     ** If any of the following errors occur:
+    ** 如果以下的错误发生:
     **
     **     SQLITE_NOMEM
     **     SQLITE_IOERR
@@ -2434,6 +2436,7 @@ int sqlite3VdbeHalt(Vdbe *p)
     ** Then the internal cache might have been left in an inconsistent
     ** state.  We need to rollback the statement transaction, if there is
     ** one, or the complete transaction if there is no statement transaction.
+    ** 那么内部的cache或许处于一种不一致的状态,我们需要回滚statement事务.
     */
 
     if (p->db->mallocFailed)
@@ -2441,7 +2444,7 @@ int sqlite3VdbeHalt(Vdbe *p)
         p->rc = SQLITE_NOMEM;
     }
     if (p->aOnceFlag) memset(p->aOnceFlag, 0, p->nOnceFlag);
-    closeAllCursors(p);
+    closeAllCursors(p); /* 关闭所有的游标 */
     if (p->magic != VDBE_MAGIC_RUN)
     {
         return SQLITE_OK;
@@ -2771,6 +2774,8 @@ int sqlite3VdbeReset(Vdbe *p)
 /*
 ** Clean up and delete a VDBE after execution.  Return an integer which is
 ** the result code.  Write any error message text into *pzErrMsg.
+** 函数执行过后清除VDBE占用的资源并删除这个VDBE.最后返回的代码是一个整数.
+** 整个过程中出现的任何错误信息都会写入*pzErrMsg. 
 */
 int sqlite3VdbeFinalize(Vdbe *p)
 {
@@ -2789,6 +2794,8 @@ int sqlite3VdbeFinalize(Vdbe *p)
 ** the corresponding bit in mask is clear.  Auxdata entries beyond 31
 ** are always destroyed.  To destroy all auxdata entries, call this
 ** routine with mask==0.
+** 为每一个VdbeFunc中的AuxData调用析构函数释放资源,如果它们对应的mask处于clear状态(也就是被移除了).
+** 如果VdbeFunc中nAux的值超过31时就会调用xDelete函数来删除实例.当mask参数值为0时会删除所有的AuxData实例.
 */
 void sqlite3VdbeDeleteAuxData(VdbeFunc *pVdbeFunc, int mask)
 {
@@ -2871,11 +2878,17 @@ void sqlite3VdbeDelete(Vdbe *p)
 ** Make sure the cursor p is ready to read or write the row to which it
 ** was last positioned.  Return an error code if an OOM fault or I/O error
 ** prevents us from positioning the cursor to its correct position.
+** 确保游标P已经准备好读或者写最近的定位到的行.
+** 如果遇到OOM错误或者I/O错误时返回错误代码,阻止我们定位光标移动到正确的位置.
 **
 ** If a MoveTo operation is pending on the given cursor, then do that
 ** MoveTo now.  If no move is pending, check to see if the row has been
 ** deleted out from under the cursor and if it has, mark the row as
 ** a NULL row.
+** 如果说一个MoveTo指令在给定的光标之前出现,那么我们执行MoveTo指令.
+** 如果没有先出现p->deferredMoveto指令那么检查在当前游标下的行是否已经被删除了,
+** 如果当前行被删除了标记当前行为NULL, p->nullRow = 1.
+** 如果说游标已经指向正确的行并且也没有被删除,那么这个函数就就什么也不干.
 **
 ** If the cursor is already pointing to the correct row and that row has
 ** not been deleted out from under the cursor, then this routine is a no-op.
@@ -3084,6 +3097,7 @@ static u64 floatSwap(u64 in)
 ** Write the serialized data blob for the value stored in pMem into
 ** buf. It is assumed that the caller has allocated sufficient space.
 ** Return the number of bytes written.
+** 写二进制序列化类型,将这些数据存储在pMem(Mem结构体类型)数据缓存中.
 **
 ** nBuf is the amount of space left in buf[].  nBuf must always be
 ** large enough to hold the entire field.  Except, if the field is
@@ -3093,10 +3107,17 @@ static u64 floatSwap(u64 in)
 ** prefix into buf[].  But if buf[] is large enough to hold both the
 ** prefix and the tail then write the prefix and set the tail to all
 ** zeros.
+** 形参nBuf指定数组buf[]中可以使用的空间大小,同时需要注意nBuf的值必须足够大,能够存储所有的数据.
+** 如果说存储的数据是一个blob类型数据并且这个数据以0结尾的时候,buf[]数组只需要有合适的空间来
+** 存储非零的数据.如果数组足够大的空间,那么只能存储二进制数据前面非零的部分相应的也只会将前面
+** 非零数据写入buf[]缓冲区中.如果说buf[]缓冲区数组空间足够大能够存储前面非零数据和零尾我们
+** 只需要将前面非零写入缓冲区数组中,后面的数据直接设置为0.
+** 返回的值是已经全部写入缓冲区buf[]数组中的数据量的大小.
 **
 ** Return the number of bytes actually written into buf[].  The number
 ** of bytes in the zero-filled tail is included in the return value only
 ** if those bytes were zeroed in buf[].
+** 在buf[]数组中0填充的尾部字节数被包含在返回值中,只有这些字节在数组中都是0.
 */
 u32 sqlite3VdbeSerialPut(u8 *buf, int nBuf, Mem *pMem, int file_format)
 {
@@ -3156,6 +3177,7 @@ u32 sqlite3VdbeSerialPut(u8 *buf, int nBuf, Mem *pMem, int file_format)
 /*
 ** Deserialize the data blob pointed to by buf as serial type serial_type
 ** and store the result in pMem.  Return the number of bytes read.
+** 反序列化数据. 返回读取的字节数目.
 */
 u32 sqlite3VdbeSerialGet(
     const unsigned char *buf,     /* Buffer to deserialize from */
@@ -3174,7 +3196,7 @@ u32 sqlite3VdbeSerialGet(
         }
         case 1:   /* 1-byte signed integer */
         {
-            pMem->u.i = (signed char)buf[0];
+            pMem->u.i = (signed char)buf[0]; /* 整数 */
             pMem->flags = MEM_Int;
             return 1;
         }
@@ -3280,6 +3302,14 @@ u32 sqlite3VdbeSerialGet(
 ** before returning.
 **
 ** If an OOM error occurs, NULL is returned.
+** 这个函数被用于给UnpackedRecord结构分配一个足够大的内存空间,分配足够大的空间可以被函数
+** sqlite3VdbeRecordUnpack()使用,如果这个函数的第一个形参KeyInfo的结构体pKeyInfo.
+** 这个空间的分配也可以使用sqlite3DbMallocRaw()函数或者通过第二个(*pSpace)和第三个形参(szSpace)
+** 从未被使用的缓存空间中分配(例如空闲栈空间).
+** 如果按照前者的分配内存空间方式形参*ppFree被设置为一个指针类型变量.
+** 这个变量的最后垃圾回由调用者使用sqlite3DbFree函数来回收垃圾.
+** 如果内存空间的分配来自于pSpace/szSpace两个参数指定的缓冲空间,*ppFree在程序结束之前被设置为NULL.
+** 如果程序的运行期间发生了OOM异常,会返回NULL.
 */
 UnpackedRecord *sqlite3VdbeAllocUnpackedRecord(
     KeyInfo *pKeyInfo,              /* Description of the record */

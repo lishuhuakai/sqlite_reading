@@ -1122,7 +1122,8 @@ int sqlite3VdbeExec(
             ** NULL into register P3 and ever register in between P2 and P3.  If P3
             ** is less than P2 (typically P3 is zero) then only register P2 is
             ** set to NULL
-            ** 将NULL写入寄存器P2,如果P3比P2要大,同时将NULL写入P3
+            ** 将Null写入寄存器P2,如果P3比P2要大,同时将Null写入P3,以及P2~P3之间的寄存器.
+            ** 如果P3小于P2(通常P3为0),那么只有P2寄存器被设置为NULL.
             */
             case OP_Null:             /* out2-prerelease */
             {
@@ -1186,6 +1187,9 @@ int sqlite3VdbeExec(
             ** registers P2..P2+P3-1.  Registers P1..P1+P1-1 are
             ** left holding a NULL.  It is an error for register ranges
             ** P1..P1+P3-1 and P2..P2+P3-1 to overlap.
+            ** 将寄存器P1 ... P1+P3-1的值移动到寄存器P2 ... P2+P3+1 之中,
+            ** 寄存器P1 ... P1+P1-1 中的值移动之后,为Null.如果寄存器P1 ... P1+P3-1 
+            ** 以及 P2 ... P2+P3-1重叠,那是一个错误.
             */
             case OP_Move:
             {
@@ -2368,6 +2372,7 @@ int sqlite3VdbeExec(
             **
             ** Check if OP_Once flag P1 is set. If so, jump to instruction P2. Otherwise,
             ** set the flag and fall through to the next instruction.
+            ** 检查一下标记P1是否被设定,如果设定了,跳转到指令P2处执行,否则的话,设置flag,继续执行下一条指令.
             **
             ** See also: JumpOnce
             */
@@ -2426,6 +2431,7 @@ int sqlite3VdbeExec(
             /* Opcode: IsNull P1 P2 * * *
             **
             ** Jump to P2 if the value in register P1 is NULL.
+            ** 如果寄存器P1的值为NULL的话,跳转到指令P2处运行.
             */
             case OP_IsNull:              /* same as TK_ISNULL, jump, in1 */
             {
@@ -2459,13 +2465,16 @@ int sqlite3VdbeExec(
             ** from this record.  If there are less that (P2+1)
             ** values in the record, extract a NULL.
             ** P1是一个游标,指向用MakeRecord指令构建的一个record.从P1指向的record提取第P2-th列
-            ** 放入P3寄存器.如果没有P2-th列,放入NULL
+            ** 放入P3寄存器.如果在record中值的个数少于(P2+1),提取出NULL.
             **
             ** The value extracted is stored in register P3.
+            ** 提取出来的值将会放入寄存器P3
             **
             ** If the column contains fewer than P2 fields, then extract a NULL.  Or,
             ** if the P4 argument is a P4_MEM use the value of the P4 argument as
             ** the result.
+            ** 如果column少于P2个字段,那么提取出NULL,或者,如果P4参数是一个指向Mem实例的指针,
+            ** 使用P4指向的值作为结果(拷贝至P3寄存器).
             **
             ** If the OPFLAG_CLEARCACHE bit is set on P5 and P1 is a pseudo-table cursor,
             ** then the cache of the cursor is reset prior to extracting the column.
@@ -2483,9 +2492,12 @@ int sqlite3VdbeExec(
                 i64 payloadSize64; /* Number of bytes in the record */
                 int p1;            /* P1 value of the opcode */
                 int p2;            /* column number to retrieve */
+                /* 游标 */
                 VdbeCursor *pC;    /* The VDBE cursor */
+                /* 指向完整的记录 */
                 char *zRec;        /* Pointer to complete record-data */
                 BtCursor *pCrsr;   /* The BTree cursor */
+                /* aType[i]保存着第i列的值类型 */
                 u32 *aType;        /* aType[i] holds the numeric type of the i-th column */
                 u32 *aOffset;      /* aOffset[i] is offset to start of data for i-th column */
                 int nField;        /* number of fields in the record */
@@ -2510,7 +2522,7 @@ int sqlite3VdbeExec(
                 memset(&sMem, 0, sizeof(sMem));
                 assert(p1 < p->nCursor);
                 assert(pOp->p3 > 0 && pOp->p3 <= p->nMem);
-                pDest = &aMem[pOp->p3];
+                pDest = &aMem[pOp->p3]; /* P3寄存器的地址 */
                 memAboutToChange(p, pDest);
                 zRec = 0;
 
@@ -2531,7 +2543,7 @@ int sqlite3VdbeExec(
 #ifndef SQLITE_OMIT_VIRTUALTABLE
                 assert(pC->pVtabCursor == 0);
 #endif
-                pCrsr = pC->pCursor;
+                pCrsr = pC->pCursor; /* 获得游标 */
                 if (pCrsr != 0)
                 {
                     /* The record is stored in a B-Tree */
@@ -2539,7 +2551,7 @@ int sqlite3VdbeExec(
                     if (rc) goto abort_due_to_error;
                     if (pC->nullRow)
                     {
-                        payloadSize = 0;
+                        payloadSize = 0; /* 记录的大小为0 */
                     }
                     else if (pC->cacheStatus == p->cacheCtr)
                     {
@@ -2646,7 +2658,7 @@ int sqlite3VdbeExec(
                     /* The following assert is true in all cases except when
                     ** the database file has been corrupted externally.
                     **    assert( zRec!=0 || avail>=payloadSize || avail>=9 ); */
-                    szHdr = getVarint32((u8*)zData, offset);
+                    szHdr = getVarint32((u8*)zData, offset); /* 头部大小 */
 
                     /* Make sure a corrupt database has not given us an oversize header.
                     ** Do this now to avoid an oversize memory allocation.
@@ -2684,6 +2696,9 @@ int sqlite3VdbeExec(
                     ** record header if the record header does not fit on a single page
                     ** in the B-Tree.  When that happens, use sqlite3VdbeMemFromBtree() to
                     ** acquire the complete header text.
+                    ** 上面的KeyFetch()或者DataFetch()很快,而且大多数时候可以获得整个记录的头部.
+                    ** 但是如果记录头没有办法放入一页,这些函数将会失败,如果发生了的话,使用
+                    ** sqlite3VdbeMemFromBtree()来获得完整的头部.
                     */
                     if (!zRec && avail < len)
                     {
@@ -2703,12 +2718,14 @@ int sqlite3VdbeExec(
                     ** arrays.  aType[i] will contain the type integer for the i-th
                     ** column and aOffset[i] will contain the offset from the beginning
                     ** of the record to the start of the data for the i-th column
+                    ** 扫描头部,使用它填充aType[]以及aOffset[]数组,aType[i]将会包含第i列的类型
+                    ** aOffset[i]记录第i列数据距离记录头部的偏移.
                     */
                     for (i = 0; i < nField; i++)
                     {
                         if (zIdx < zEndHdr)
                         {
-                            aOffset[i] = offset;
+                            aOffset[i] = offset; /* 记录下数据的偏移 */
                             if (zIdx[0] < 0x80)
                             {
                                 t = zIdx[0];
@@ -2718,9 +2735,9 @@ int sqlite3VdbeExec(
                             {
                                 zIdx += sqlite3GetVarint32(zIdx, &t);
                             }
-                            aType[i] = t;
-                            szField = sqlite3VdbeSerialTypeLen(t);
-                            offset += szField;
+                            aType[i] = t; /* 记录下数据类型 */
+                            szField = sqlite3VdbeSerialTypeLen(t); /* 数据长度 */
+                            offset += szField; /* 计算数据的偏移 */
                             if (offset < szField)  /* True if offset overflows */
                             {
                                 zIdx = &zEndHdr[1];  /* Forces SQLITE_CORRUPT return below */
@@ -2760,6 +2777,9 @@ int sqlite3VdbeExec(
                 ** then there are not enough fields in the record to satisfy the
                 ** request.  In this case, set the value NULL or to P4 if P4 is
                 ** a pointer to a Mem object.
+                ** 获取列信息,如果aOffset[p2]不是0,那么反序列化对应的值,如果是0,那么表示记录中
+                ** 没有足够多的字段来满足需求,这种情况下,将值设置为NULL,如果如果P4是一个指向
+                ** Mem实例的指针,将值设置为P4的值.
                 */
                 if (aOffset[p2])
                 {
@@ -2797,11 +2817,12 @@ int sqlite3VdbeExec(
                             }
                             zData = sMem.z;
                         }
+                        /* 解析并转换磁盘中读取出的数据, 结果放入pDest */
                         sqlite3VdbeSerialGet((u8*)zData, t, pDest);
                     }
                     pDest->enc = encoding;
                 }
-                else
+                else /* 记录中没有足够的字段 */
                 {
                     if (pOp->p4type == P4_MEM)
                     {
@@ -2840,10 +2861,13 @@ int sqlite3VdbeExec(
             /* Opcode: Affinity P1 P2 * P4 *
             **
             ** Apply affinities to a range of P2 registers starting with P1.
+            ** 将affinities应用于从寄存器P1开始的P2个寄存器. 个人的理解是将寄存器的值转换为
+            ** 一种近似的表达形式.
             **
             ** P4 is a string that is P2 characters long. The nth character of the
             ** string indicates the column affinity that should be used for the nth
             ** memory cell in the range.
+            ** P4是一个字符串,长度为P2,第n个字符代表从寄存器P1开始的第n个寄存器列的affinity编码.
             */
             case OP_Affinity:
             {
@@ -2893,6 +2917,7 @@ int sqlite3VdbeExec(
                 i64 nByte;             /* Data space required for this record */
                 int nZero;             /* Number of zero bytes at the end of the record */
                 int nVarint;           /* Number of bytes in a varint */
+                /* 序列化之后的类型 */
                 u32 serial_type;       /* Type field */
                 Mem *pData0;           /* First field to be combined into the record */
                 Mem *pLast;            /* Last field of the record */
@@ -2923,7 +2948,7 @@ int sqlite3VdbeExec(
                 nData = 0;         /* Number of bytes of data space */
                 nHdr = 0;          /* Number of bytes of header space */
                 nZero = 0;         /* Number of zero bytes at the end of the record */
-                nField = pOp->p1;
+                nField = pOp->p1; /* 字段的个数 */
                 zAffinity = pOp->p4.z;
                 assert(nField > 0 && pOp->p2 > 0 && pOp->p2 + nField <= p->nMem + 1);
                 pData0 = &aMem[nField]; /* 指向data(0) */
@@ -2951,8 +2976,8 @@ int sqlite3VdbeExec(
                     {
                         sqlite3VdbeMemExpandBlob(pRec);
                     }
-                    serial_type = sqlite3VdbeSerialType(pRec, file_format);
-                    len = sqlite3VdbeSerialTypeLen(serial_type);
+                    serial_type = sqlite3VdbeSerialType(pRec, file_format); /* 序列化之后的类型值 */
+                    len = sqlite3VdbeSerialTypeLen(serial_type); /* 长度 */
                     nData += len; /* 获取长度 */
                     nHdr += sqlite3VarintLen(serial_type);
                     if (pRec->flags & MEM_Zero)
@@ -3005,7 +3030,7 @@ int sqlite3VdbeExec(
 
                 assert(pOp->p3 > 0 && pOp->p3 <= p->nMem);
                 pOut->n = (int)nByte;
-                pOut->flags = MEM_Blob | MEM_Dyn;
+                pOut->flags = MEM_Blob | MEM_Dyn; /* 内存动态分配 */
                 pOut->xDel = 0;
                 if (nZero)
                 {
@@ -3436,8 +3461,10 @@ int sqlite3VdbeExec(
             ** P3==3 is the recommended pager cache size, and so forth.  P1==0 is
             ** the main database file and P1==1 is the database file used to store
             ** temporary tables.
-            ** 从数据库P1中读取P3中的cookie值,并且写入寄存器P2,P3==1 -> schema version
-            ** P3==2 -> database format P3==3 -> recommended pager cache
+            ** 从数据库P1中读取P3所指示的cookie值,并且写入寄存器P2,其实读取出来的都是4个字节的整数.
+            ** P3 == 1 -> schema version [schema版本]
+            ** P3 == 2 -> database format [数据库格式]
+            ** P3 == 3 -> recommended pager cache [推荐的pager cache大小]
             **
             ** There must be a read-lock on the database (either a transaction
             ** must be started or there must be an open cursor) before
@@ -3468,6 +3495,12 @@ int sqlite3VdbeExec(
             ** P2==2 is the database format. P2==3 is the recommended pager cache
             ** size, and so forth.  P1==0 is the main database file and P1==1 is the
             ** database file used to store temporary tables.
+            ** 将寄存器P3中的内容写入数据库P1的文件头部,P2用于指示写在哪个位置.其实写入的都是4个字节
+            ** 的整数.
+            ** P2 == 1 -> schema version [schema版本]
+            ** P2 == 2 -> database format [数据库格式]
+            ** P2 == 3 -> recommended pager cache size [推荐的pager cache大小]
+            ** P1 == 0,表示主数据库文件,P1 == 1,用于存储临时表的数据库
             **
             ** A transaction must be started before executing this opcode.
             */
@@ -3585,9 +3618,12 @@ int sqlite3VdbeExec(
             ** database.  Give the new cursor an identifier of P1.  The P1
             ** values need not be contiguous but all P1 values should be small integers.
             ** It is an error for P1 to be negative.
+            ** 为数据库的表打开一个只读的游标,表在数据库文件中的root page为P2,数据库文件通过P3
+            ** 来确定,如果P3为0,表示主数据库,P3为1的话,表示临时表的数据库,P3>1的话,表示attach的数据库.
             **
             ** If P5!=0 then use the content of register P2 as the root page, not
             ** the value of P2 itself.
+            ** 如果P5不为0,那么使用寄存器P2中的值作为root page,而不是P2的值.
             **
             ** There will be a read lock on the database whenever there is an
             ** open cursor.  If the database was unlocked prior to this instruction
@@ -3597,12 +3633,17 @@ int sqlite3VdbeExec(
             ** released when all cursors are closed.  If this instruction attempts
             ** to get a read lock but fails, the script terminates with an
             ** SQLITE_BUSY error code.
+            ** 打开游标的时候,数据库将会加一个读锁.如果在这条指令之前数据库已经解锁,那么这条指令
+            ** 会加一个读锁.读锁允许其他进程来读取数据库内容,禁止其他进程修改.所有游标关闭之后,
+            ** 读锁才会被释放.如果获取读锁失败,那么script终止,返回一个SQLITE_BUSY的错误码.
             **
             ** The P4 value may be either an integer (P4_INT32) or a pointer to
             ** a KeyInfo structure (P4_KEYINFO). If it is a pointer to a KeyInfo
             ** structure, then said structure defines the content and collating
             ** sequence of the index being opened. Otherwise, if P4 is an integer
             ** value, it is set to the number of columns in the table.
+            ** P4的值要么是一个整数,要么是一个指向KeyInfo结构体的指针,如果它是一个指针的话,指向的
+            ** 结构定义了内容和索引内容的排序.如果是整数,它设置为表中的列数.
             **
             ** See also OpenWrite.
             */
@@ -3655,13 +3696,13 @@ int sqlite3VdbeExec(
                 nField = 0;
                 pKeyInfo = 0;
                 p2 = pOp->p2;
-                iDb = pOp->p3;
+                iDb = pOp->p3; /* 参数P3用于指定数据库 */
                 assert(iDb >= 0 && iDb < db->nDb);
                 assert((p->btreeMask & (((yDbMask)1) << iDb)) != 0);
                 pDb = &db->aDb[iDb];
                 pX = pDb->pBt;
                 assert(pX != 0);
-                if (pOp->opcode == OP_OpenWrite)
+                if (pOp->opcode == OP_OpenWrite) /* 写游标 */
                 {
                     wrFlag = 1;
                     assert(sqlite3SchemaMutexHeld(db, iDb, 0));
@@ -3708,7 +3749,7 @@ int sqlite3VdbeExec(
                 if (pCur == 0) goto no_mem;
                 pCur->nullRow = 1;
                 pCur->isOrdered = 1;
-                /* 创建一个游标,p2是root page */
+                /* 创建一个游标,p2是root page的页号 */
                 rc = sqlite3BtreeCursor(pX, p2, wrFlag, pKeyInfo, pCur->pCursor);
                 pCur->pKeyInfo = pKeyInfo;
                 assert(OPFLAG_BULKCSR == BTREE_BULKLOAD);
@@ -3733,13 +3774,13 @@ int sqlite3VdbeExec(
             ** The cursor is always opened read/write even if
             ** the main database is read-only.  The ephemeral
             ** table is deleted automatically when the cursor is closed.
-            ** 在短暂的表中打开一个新的游标P1,游标可读可写.游标关闭之后,表会被删掉.
+            ** 在临时表中打开一个新的游标P1,游标可读可写.游标关闭之后,表会被删掉.
             **
             ** P2 is the number of columns in the ephemeral table.
             ** The cursor points to a BTree table if P4==0 and to a BTree index
             ** if P4 is not 0.  If P4 is not NULL, it points to a KeyInfo structure
             ** that defines the format of keys in the index.
-            ** P2是表中列的个数,如果P4为0, 游标指向一个BTree Table,否则指向BTree index.
+            ** P2是临时表中列的个数,如果P4为0(NULL), 游标指向一个BTree Table,否则指向BTree index.
             ** 如果P4不为空,那么它指向一个KeyInfo结构体,定义了索引的key的格式.
             **
             ** This opcode was once called OpenTemp.  But that created
@@ -3747,11 +3788,14 @@ int sqlite3VdbeExec(
             ** to a TEMP table at the SQL level, or to a table opened by
             ** this opcode.  Then this opcode was call OpenVirtual.  But
             ** that created confusion with the whole virtual-table idea.
+            ** 这个操作码曾经被称之为OpenTemp,但是因为temp table的缘故造成了困扰....
+            ** 因此改名.
             **
             ** The P5 parameter can be a mask of the BTREE_* flags defined
             ** in btree.h.  These flags control aspects of the operation of
             ** the btree.  The BTREE_OMIT_JOURNAL and BTREE_SINGLE flags are
             ** added automatically.
+            ** 参数P5是标记BTREE_*的掩码,这些标记控制着打开btree的操作.
             */
             /* Opcode: OpenAutoindex P1 P2 * P4 *
             **
@@ -3759,6 +3803,8 @@ int sqlite3VdbeExec(
             ** different name to distinguish its use.  Tables created using
             ** by this opcode will be used for automatically created transient
             ** indices in joins.
+            ** 此操作码和Op_OpenEphemera一样.仅仅是换了一个名称.通过此操作码创建的表将会
+            ** 被用于joins中的临时索引.
             */
             case OP_OpenAutoindex:
             case OP_OpenEphemeral:
@@ -3772,14 +3818,14 @@ int sqlite3VdbeExec(
                     SQLITE_OPEN_TRANSIENT_DB;
 
                 assert(pOp->p1 >= 0);
-                pCx = allocateCursor(p, pOp->p1, pOp->p2, -1, 1);
+                pCx = allocateCursor(p, pOp->p1, pOp->p2, -1, 1); /* 分配新游标 */
                 if (pCx == 0) goto no_mem;
                 pCx->nullRow = 1;
                 rc = sqlite3BtreeOpen(db->pVfs, 0, db, &pCx->pBt,
                                       BTREE_OMIT_JOURNAL | BTREE_SINGLE | pOp->p5, vfsFlags);
                 if (rc == SQLITE_OK)
                 {
-                    rc = sqlite3BtreeBeginTrans(pCx->pBt, 1);
+                    rc = sqlite3BtreeBeginTrans(pCx->pBt, 1); /* 开启事务 */
                 }
                 if (rc == SQLITE_OK)
                 {
@@ -3787,15 +3833,19 @@ int sqlite3VdbeExec(
                     ** sqlite3BtreeCreateTable() with the BTREE_BLOBKEY flag before
                     ** opening it. If a transient table is required, just use the
                     ** automatically created table with root-page 1 (an BLOB_INTKEY table).
+                    ** 如果需要一个临时的索引,通过调用sqlite3BtreeCreateTable()来创建.
+                    ** 如果临时的表被需要..
                     */
                     if (pOp->p4.pKeyInfo)
                     {
                         int pgno;
                         assert(pOp->p4type == P4_KEYINFO);
+                        /* 这里会创建一个临时表(索引) */
                         rc = sqlite3BtreeCreateTable(pCx->pBt, &pgno, BTREE_BLOBKEY | pOp->p5);
                         if (rc == SQLITE_OK)
                         {
                             assert(pgno == MASTER_ROOT + 1);
+                            /* 打开索引 */
                             rc = sqlite3BtreeCursor(pCx->pBt, pgno, 1,
                                                     (KeyInfo*)pOp->p4.z, pCx->pCursor);
                             pCx->pKeyInfo = pOp->p4.pKeyInfo;
@@ -3892,10 +3942,14 @@ int sqlite3VdbeExec(
             ** use the value in register P3 as the key.  If cursor P1 refers
             ** to an SQL index, then P3 is the first in an array of P4 registers
             ** that are used as an unpacked index key.
+            ** 如果游标P1指向一个SQL表(使用整型key的B-tree),使用寄存器P3中的值作为key,如果
+            ** 游标P1指向一个SQL索引,那么从寄存器P3位置开始一共P4个寄存器作为unpacket index key
             **
             ** Reposition cursor P1 so that  it points to the smallest entry that
             ** is greater than or equal to the key value. If there are no records
             ** greater than or equal to the key and P2 is not zero, then jump to P2.
+            ** 重新定位游标P1,使得它指向满足条件的最小的记录: 记录的key大于或者等于指令提供的key.
+            ** 如果没有满足条件的记录,那么跳转到P2执行.
             **
             ** See also: Found, NotFound, Distinct, SeekLt, SeekGt, SeekLe
             */
@@ -3905,10 +3959,14 @@ int sqlite3VdbeExec(
             ** use the value in register P3 as a key. If cursor P1 refers
             ** to an SQL index, then P3 is the first in an array of P4 registers
             ** that are used as an unpacked index key.
+            ** 如果游标P1指向一个SQL表(使用整型key的B-tree),使用寄存器P3中的值作为key,如果
+            ** 游标P1指向一个SQL索引,那么从寄存器P3位置开始一共P4个寄存器作为unpacket index key
             **
             ** Reposition cursor P1 so that  it points to the smallest entry that
             ** is greater than the key value. If there are no records greater than
             ** the key and P2 is not zero, then jump to P2.
+            ** 重新定位游标P1,使得它指向满足条件的最小的记录: 记录的key大于指令提供的key.
+            ** 如果没有满足条件的记录,那么跳转到P2执行.
             **
             ** See also: Found, NotFound, Distinct, SeekLt, SeekGe, SeekLe
             */
@@ -3922,6 +3980,8 @@ int sqlite3VdbeExec(
             ** Reposition cursor P1 so that  it points to the largest entry that
             ** is less than the key value. If there are no records less than
             ** the key and P2 is not zero, then jump to P2.
+            ** 重新定位游标P1,使得它指向满足条件的最小的记录: 记录的key小于指令提供的key.
+            ** 如果没有满足条件的记录,那么跳转到P2执行.
             **
             ** See also: Found, NotFound, Distinct, SeekGt, SeekGe, SeekLe
             */
@@ -3935,7 +3995,8 @@ int sqlite3VdbeExec(
             ** Reposition cursor P1 so that it points to the largest entry that
             ** is less than or equal to the key value. If there are no records
             ** less than or equal to the key and P2 is not zero, then jump to P2.
-            **
+            ** 重新定位游标P1,使得它指向满足条件的最小的记录: 记录的key小于等于指令提供的key.
+            ** 如果没有满足条件的记录,那么跳转到P2执行.
             ** See also: Found, NotFound, Distinct, SeekGt, SeekGe, SeekLt
             */
             case OP_SeekLt:         /* jump, in3 */
@@ -4138,6 +4199,8 @@ int sqlite3VdbeExec(
             ** This is actually a deferred seek.  Nothing actually happens until
             ** the cursor is used to read a record.  That way, if no reads
             ** occur, no unnecessary I/O happens.
+            ** 这实际是一个延迟移动,直到游标开始读记录之前,什么也不会发生.这意味着,如果没有读发生.
+            ** 也不会有IO产生.
             */
             case OP_Seek:      /* in2 */
             {
@@ -4151,9 +4214,9 @@ int sqlite3VdbeExec(
                     assert(pC->isTable);
                     pC->nullRow = 0;
                     pIn2 = &aMem[pOp->p2];
-                    pC->movetoTarget = sqlite3VdbeIntValue(pIn2);
+                    pC->movetoTarget = sqlite3VdbeIntValue(pIn2); /* 记录下移动的目的 */
                     pC->rowidIsValid = 0;
-                    pC->deferredMoveto = 1;
+                    pC->deferredMoveto = 1; /* 游标需要延迟移动 */
                 }
                 break;
             }
@@ -4170,13 +4233,15 @@ int sqlite3VdbeExec(
             ** Cursor P1 is on an index btree.  If the record identified by P3 and P4
             ** is a prefix of any entry in P1 then a jump is made to P2 and
             ** P1 is left pointing at the matching entry.
-            ** P1是一个游标,指向btree,如果由P3以及P4指定的record在P1指向的表中重复了,那么跳转到P2
+            ** P1游标在索引btree之上,如果由P3以及P4指定的record在P1指向的表中已经存在,那么跳转到P2指令处执行.
             */
             /* Opcode: NotFound P1 P2 P3 P4 *
             **
             ** If P4==0 then register P3 holds a blob constructed by MakeRecord.  If
             ** P4>0 then register P3 is the first of P4 registers that form an unpacked
             ** record.
+            ** 如果P4为0,那么P3指向一个blob(由MakeRecord指令创建),如果P4>0,那么从P3开始的长度为P4
+            ** 的寄存器数组构成一个unpacked record.
             **
             ** Cursor P1 is on an index btree.  If the record identified by P3 and P4
             ** is not the prefix of any entry in P1 then a jump is made to P2.  If P1
@@ -4214,7 +4279,7 @@ int sqlite3VdbeExec(
                     if (pOp->p4.i > 0) /* 列个数 */
                     {
                         r.pKeyInfo = pC->pKeyInfo;
-                        r.nField = (u16)pOp->p4.i;
+                        r.nField = (u16)pOp->p4.i; /* 字段个数 */
                         r.aMem = pIn3;
 #ifdef SQLITE_DEBUG
                         {
@@ -4236,6 +4301,7 @@ int sqlite3VdbeExec(
                         sqlite3VdbeRecordUnpack(pC->pKeyInfo, pIn3->n, pIn3->z, pIdxKey);
                         pIdxKey->flags |= UNPACKED_PREFIX_MATCH;
                     }
+                    /* 根据key,到数据库中寻找记录 */
                     rc = sqlite3BtreeMovetoUnpacked(pC->pCursor, pIdxKey, 0, 0, &res);
                     if (pOp->p4.i == 0)
                     {
@@ -4245,17 +4311,17 @@ int sqlite3VdbeExec(
                     {
                         break;
                     }
-                    alreadyExists = (res == 0);
+                    alreadyExists = (res == 0); /* 记录是否在表中已经存在 */
                     pC->deferredMoveto = 0;
                     pC->cacheStatus = CACHE_STALE;
                 }
                 if (pOp->opcode == OP_Found)
-                {
-                    if (alreadyExists) pc = pOp->p2 - 1;
+                { /* 为什么pc为P2-1,很简单,下一条指令执行之前,pc会+1 */
+                    if (alreadyExists) pc = pOp->p2 - 1; /* 存在,跳转到P2指令执行 */
                 }
                 else
                 {
-                    if (!alreadyExists) pc = pOp->p2 - 1;
+                    if (!alreadyExists) pc = pOp->p2 - 1; /* 不存在,跳转到P2指令执行 */
                 }
                 break;
             }
@@ -4363,8 +4429,8 @@ int sqlite3VdbeExec(
             ** with that key does not exist in table of P1, then jump to P2.
             ** If the record does exist, then fall through.  The cursor is left
             ** pointing to the record if it exists.
-            ** 将寄存器P3中的值作为一个整数key,如果通过这个key在P1表中找不到记录,跳转到P2
-            ** 记录存在,继续执行
+            ** 将寄存器P3中的值作为一个整数key,如果通过这个key在P1表中找不到记录,跳转到指令P2处继续执行
+            ** 记录存在,继续执行下一条指令.
             **
             ** The difference between this operation and NotFound is that this
             ** operation assumes the key is an integer and that P1 is a table whereas
@@ -4442,6 +4508,7 @@ int sqlite3VdbeExec(
             ** table that cursor P1 points to.  The new record number is written
             ** written to register P2.
             ** 获得一个新的整数类型的record number,将其作为一张表的一个key,
+            ** record number在数据库表(由P1游标指向)中应该从未被使用过.
             ** 新的record number将会写入寄存器P2
             **
             ** If P3>0 then P3 is a register in the root frame of this VDBE that holds
@@ -4451,10 +4518,11 @@ int sqlite3VdbeExec(
             ** generated record number. This P3 mechanism is used to help implement the
             ** AUTOINCREMENT feature.
             ** 如果P3>0,那么P3是VDBE root frame中的一个寄存器,它记录了先前生成的最大的record number.
-            ** 新生成的record id的值要大于这个值.P3的值帮助实现AUTOINCREMENT特性.
+            ** 新生成的record number要大于这个值.P3的值帮助实现AUTOINCREMENT特性.
             */
             case OP_NewRowid:             /* out2-prerelease */
             {
+                /* 新的rowid */
                 i64 v;                 /* The new rowid */
                 VdbeCursor *pC;        /* Cursor of table to get the new rowid */
                 int res;               /* Result of an sqlite3BtreeLast() */
@@ -4622,7 +4690,8 @@ int sqlite3VdbeExec(
             ** number P2. The key is stored in register P3. The key must
             ** be a MEM_Int.
             ** 往游标P1指向的表写入一个entry,如果表中不存在,那么会插入,如果存在,就会覆写.
-            ** Key被存储在寄存器P3之中,key的类型为MEM_Int
+            ** 数据是Blob类型,存储在寄存器P2之中.
+            ** Key被存储在寄存器P3之中,key的类型为int.
             **
             ** If the OPFLAG_NCHANGE flag of P5 is set, then the row change count is
             ** incremented (otherwise not).  If the OPFLAG_LASTROWID flag of P5 is set,
@@ -4638,15 +4707,20 @@ int sqlite3VdbeExec(
             ** currently pointing to.  Presumably, the prior OP_NotExists opcode
             ** has already positioned the cursor correctly.  This is an optimization
             ** that boosts performance by avoiding redundant seeks.
+            ** 如果P5的OFPLAG_USESEEKRESULT标记被设置,而且上一次seek操作的结果是成功的,那么这个
+            ** 操作将会尝试寻找和恰当的行在做插入操作之前.
             **
             ** If the OPFLAG_ISUPDATE flag is set, then this opcode is part of an
             ** UPDATE operation.  Otherwise (if the flag is clear) then this opcode
             ** is part of an INSERT operation.  The difference is only important to
             ** the update hook.
+            ** 如果OPFLAG_ISUPDATE标记被设置,那么这个操作是UPDATE的一部分,否则,这个操作是INSERT
+            ** 的一部分,这个差别对应updte回调来说很重要.
             **
             ** Parameter P4 may point to a string containing the table-name, or
             ** may be NULL. If it is not NULL, then the update-hook
             ** (sqlite3.xUpdateCallback) is invoked following a successful insert.
+            ** 参数P4或许指向一个包含着表名的字符串,或许为空.
             **
             ** (WARNING/TODO: If P1 is a pseudo-cursor and P2 is dynamically
             ** allocated, then ownership of P2 is transferred to the pseudo-cursor
@@ -4656,6 +4730,7 @@ int sqlite3VdbeExec(
             **
             ** This instruction only works on tables.  The equivalent instruction
             ** for indices is OP_IdxInsert.
+            ** 这条指令只在表上运行,在索引上执行的类似指令为OP_IdxInsert.
             */
             /* Opcode: InsertInt P1 P2 P3 P4 P5
             **
@@ -4721,6 +4796,7 @@ int sqlite3VdbeExec(
                     nZero = 0;
                 }
                 sqlite3BtreeSetCachedRowid(pC->pCursor, 0);
+                /* 执行数据插入 */
                 rc = sqlite3BtreeInsert(pC->pCursor, 0, iKey,
                                         pData->z, pData->n, nZero,
                                         pOp->p5 & OPFLAG_APPEND, seekResult
@@ -4745,22 +4821,27 @@ int sqlite3VdbeExec(
             /* Opcode: Delete P1 P2 * P4 *
             **
             ** Delete the record at which the P1 cursor is currently pointing.
+            ** 删除P1游标当前指向的记录.
             **
             ** The cursor will be left pointing at either the next or the previous
             ** record in the table. If it is left pointing at the next record, then
             ** the next Next instruction will be a no-op.  Hence it is OK to delete
             ** a record from within an Next loop.
+            ** 游标将会指向被删除记录的后/前面的记录.
             **
             ** If the OPFLAG_NCHANGE flag of P2 is set, then the row change count is
             ** incremented (otherwise not).
+            ** 如果P2中带有OPFLAG_NCHANGE标记,那么行的change count将会递增(否则不会).
             **
             ** P1 must not be pseudo-table.  It has to be a real table with
             ** multiple rows.
+            ** P1不能是一张伪表,它应当是拥有许多行的真表.
             **
             ** If P4 is not NULL, then it is the name of the table that P1 is
             ** pointing to.  The update hook will be invoked, if it exists.
             ** If P4 is not NULL then the P1 cursor must have been positioned
             ** using OP_NotFound prior to invoking this opcode.
+            ** 如果P4不为NULL,那么它应是P1所指向表的名称.update回调将会被调用,如果有的话.
             */
             case OP_Delete:
             {
@@ -4789,6 +4870,10 @@ int sqlite3VdbeExec(
                 ** to the row to be deleted and the sqlite3VdbeCursorMoveto() operation
                 ** below is always a no-op and cannot fail.  We will run it anyhow, though,
                 ** to guard against future changes to the code generator.
+                ** OP_Delete操作码之后,紧跟着操作在同一张表上的OP_NotExists或者OP_Lase或者OP_Column.
+                ** 没有任何干预操作会使得光标移动或者无效.
+                ** 因此游标pC总是指向要删除的行,并且下面的sqlite3CursorMoveto()什么也不干,而且不可能失败.
+                ** 我们总是要跑,为了应对未来的改动.
                 **/
                 assert(pC->deferredMoveto == 0);
                 rc = sqlite3VdbeCursorMoveto(pC);
@@ -4829,6 +4914,8 @@ int sqlite3VdbeExec(
             ** register P3 with the entry that the sorter cursor currently points to.
             ** If, excluding the rowid fields at the end, the two records are a match,
             ** fall through to the next instruction. Otherwise, jump to instruction P2.
+            ** 游标P1用于排序,此条指令比较排序游标当前指向的记录以及寄存器P3中的blob类型的记录.
+            ** 如果在排除了rowid这一列之后,两个记录匹配,跳转到下一条指令,否则跳转到指令P2处执行.
             */
             case OP_SorterCompare:
             {
@@ -4872,6 +4959,8 @@ int sqlite3VdbeExec(
             ** There is no interpretation of the data.
             ** It is just copied onto the P2 register exactly as
             ** it is found in the database file.
+            ** 将游标P1指向的完整的行数据写入寄存器P2,没有对数据进行解码.它只是被完全拷贝至P2
+            ** 寄存器,就像它从数据库文件中被找到一样.
             **
             ** If the P1 cursor must be pointing to a valid row (not a NULL row)
             ** of a real table, not a pseudo-table.
@@ -4899,7 +4988,7 @@ int sqlite3VdbeExec(
 
                 /* Note that RowKey and RowData are really exactly the same instruction */
                 assert(pOp->p1 >= 0 && pOp->p1 < p->nCursor);
-                pC = p->apCsr[pOp->p1];
+                pC = p->apCsr[pOp->p1]; /* 游标P1 */
                 assert(pC->isSorter == 0);
                 assert(pC->isTable || pOp->opcode != OP_RowData);
                 assert(pC->isIndex || pOp->opcode == OP_RowData);
@@ -4944,7 +5033,7 @@ int sqlite3VdbeExec(
                     goto no_mem;
                 }
                 pOut->n = n;
-                MemSetTypeFlag(pOut, MEM_Blob);
+                MemSetTypeFlag(pOut, MEM_Blob); /* 数据类型为Blob */
                 if (pC->isIndex)
                 {
                     rc = sqlite3BtreeKey(pCrsr, 0, n, pOut->z);
@@ -4962,10 +5051,13 @@ int sqlite3VdbeExec(
             **
             ** Store in register P2 an integer which is the key of the table entry that
             ** P1 is currently point to.
+            ** 将游标P1当前指向的表的记录的key(整型)写入到寄存器P2.
             **
             ** P1 can be either an ordinary table or a virtual table.  There used to
             ** be a separate OP_VRowid opcode for use with virtual tables, but this
             ** one opcode now works for both table types.
+            ** 游标P1可以指向一个普通的表,也可以是一个虚拟表,对于虚拟表,这里通常会有一个VRowid操作码
+            ** 但是这个操作码也适用.
             */
             case OP_Rowid:                   /* out2-prerelease */
             {
@@ -5021,6 +5113,8 @@ int sqlite3VdbeExec(
             ** Move the cursor P1 to a null row.  Any OP_Column operations
             ** that occur while the cursor is on the null row will always
             ** write a NULL.
+            ** 将游标P1移动到一个空行(null row).当游标在一个空行上时执行Column,将会导致写入
+            ** 一个NULL.
             */
             case OP_NullRow:
             {
@@ -5046,6 +5140,9 @@ int sqlite3VdbeExec(
             ** If the table or index is empty and P2>0, then jump immediately to P2.
             ** If P2 is 0 or if the table or index is not empty, fall through
             ** to the following instruction.
+            ** 下一次使用Rowid/Column/下一跳指令,P1游标将指向数据库表/游标的最后一条记录.
+            ** 如果表/索引为空,并且P2>0,那么立刻跳转到P2指令处运行.
+            ** 如果P2为0,而且表/索引不为空,跳转到下一条指令.
             */
             case OP_Last:          /* jump */
             {
@@ -5054,19 +5151,19 @@ int sqlite3VdbeExec(
                 int res;
 
                 assert(pOp->p1 >= 0 && pOp->p1 < p->nCursor);
-                pC = p->apCsr[pOp->p1];
+                pC = p->apCsr[pOp->p1]; /* 获得P1游标 */
                 assert(pC != 0);
                 pCrsr = pC->pCursor;
                 res = 0;
                 if (ALWAYS(pCrsr != 0))
                 {
-                    rc = sqlite3BtreeLast(pCrsr, &res);
+                    rc = sqlite3BtreeLast(pCrsr, &res); /* 定位到最后一条记录 */
                 }
                 pC->nullRow = (u8)res;
                 pC->deferredMoveto = 0;
                 pC->rowidIsValid = 0;
                 pC->cacheStatus = CACHE_STALE;
-                if (pOp->p2 > 0 && res)
+                if (pOp->p2 > 0 && res) /* 如果表/索引为空,并且P2>0,那么立刻跳转到P2指令处运行 */
                 {
                     pc = pOp->p2 - 1;
                 }
@@ -5109,6 +5206,9 @@ int sqlite3VdbeExec(
             ** If the table or index is empty and P2>0, then jump immediately to P2.
             ** If P2 is 0 or if the table or index is not empty, fall through
             ** to the following instruction.
+            ** 下一次使用Rowid或者操作游标P1的下一条指令将会指向数据库表/索引的第一条记录.
+            ** 如果表/索引为空,P2>0,那么立即跳转到指令P2出运行,如果P2为0,或者表/索引不为空
+            ** 继续执行下一条指令.
             */
             case OP_Rewind:          /* jump */
             {
@@ -5129,7 +5229,7 @@ int sqlite3VdbeExec(
                 {
                     pCrsr = pC->pCursor;
                     assert(pCrsr);
-                    rc = sqlite3BtreeFirst(pCrsr, &res);
+                    rc = sqlite3BtreeFirst(pCrsr, &res); /* 移动到第一条记录 */
                     pC->atFirst = res == 0 ? 1 : 0;
                     pC->deferredMoveto = 0;
                     pC->cacheStatus = CACHE_STALE;
@@ -5151,15 +5251,18 @@ int sqlite3VdbeExec(
             ** to the following instruction.  But if the cursor advance was successful,
             ** jump immediately to P2.
             ** 移动游标P1,让其指向一下一个key/data对,如果游标到了最后的位置,跳转到下一条指令,
-            ** 否则跳转到P2指令处继续执行
+            ** 否则跳转到指令P2处继续执行
             **
             ** The P1 cursor must be for a real table, not a pseudo-table.
+            ** 游标P1必须指向一个真表,而不是一个伪表.
             **
             ** P4 is always of type P4_ADVANCE. The function pointer points to
             ** sqlite3BtreeNext().
+            ** P4的类型为ADVANCE,这个函数指针指向sqlite3BtreeNext()
             **
             ** If P5 is positive and the jump is taken, then event counter
             ** number P5-1 in the prepared statement is incremented.
+            ** 如果P5为正数,并且跳转发生了,那么在prepared statement中的事件计数器P5-1会递增.
             **
             ** See also: Prev
             */
@@ -5169,14 +5272,18 @@ int sqlite3VdbeExec(
             ** table or index.  If there is no previous key/value pairs then fall through
             ** to the following instruction.  But if the cursor backup was successful,
             ** jump immediately to P2.
+            ** 向前移动游标P1,让它指向对应表/索引的前一个key/data对.如果已经没有了更多的key/data对
+            ** 那么跳转到下一跳指令,但是如果游标移动成功,跳转到指令P2处继续执行.
             **
             ** The P1 cursor must be for a real table, not a pseudo-table.
             **
             ** P4 is always of type P4_ADVANCE. The function pointer points to
             ** sqlite3BtreePrevious().
+            ** P4的类型为ADVANCE,这个函数指针指向sqlite3BtreePrevious()
             **
             ** If P5 is positive and the jump is taken, then event counter
             ** number P5-1 in the prepared statement is incremented.
+            ** 如果P5为正数,并且跳转发生了,那么在prepared statement中的事件计数器P5-1会递增.
             */
             case OP_SorterNext:    /* jump */
 #ifdef SQLITE_OMIT_MERGE_SORT
@@ -5230,10 +5337,12 @@ int sqlite3VdbeExec(
             ** Register P2 holds an SQL index key made using the
             ** MakeRecord instructions.  This opcode writes that key
             ** into the index P1.  Data for the entry is nil.
-            ** 寄存器P2持有一个通过MakeRecord指令创建的SQL index key, 此操作码将key通过索引P1写入
+            ** 寄存器P2持有一个通过MakeRecord指令创建的SQL index key, 此操作码将key通过游标P1写入
+            ** entry的数据为nil(空)
             **
             ** P3 is a flag that provides a hint to the b-tree layer that this
             ** insert is likely to be an append.
+            ** P3是一个标记,用于给b-tree层提供信息,插入很可能是追加.
             **
             ** This instruction only works for indices.  The equivalent instruction
             ** for tables is OP_Insert.
@@ -5270,6 +5379,7 @@ int sqlite3VdbeExec(
                         {
                             nKey = pIn2->n;
                             zKey = pIn2->z;
+                            /* 插入数据,仅有key,没有data */
                             rc = sqlite3BtreeInsert(pCrsr, zKey, nKey, "", 0, 0, pOp->p3,
                                                     ((pOp->p5 & OPFLAG_USESEEKRESULT) ? pC->seekResult : 0)
                                                    );
@@ -5286,6 +5396,8 @@ int sqlite3VdbeExec(
             ** The content of P3 registers starting at register P2 form
             ** an unpacked index key. This opcode removes that entry from the
             ** index opened by cursor P1.
+            ** 从寄存器P2到寄存器P3中的值构成一个unpacked index key,此操作码移除游标P1
+            ** 指向的entry
             */
             case OP_IdxDelete:
             {
@@ -5312,10 +5424,11 @@ int sqlite3VdbeExec(
                         for (i = 0; i < r.nField; i++) assert(memIsValid(&r.aMem[i]));
                     }
 #endif
+                    /* 根据key移动游标 */
                     rc = sqlite3BtreeMovetoUnpacked(pCrsr, &r, 0, 0, &res);
                     if (rc == SQLITE_OK && res == 0)
                     {
-                        rc = sqlite3BtreeDelete(pCrsr);
+                        rc = sqlite3BtreeDelete(pCrsr); /* 找到了才进行删除 */
                     }
                     assert(pC->deferredMoveto == 0);
                     pC->cacheStatus = CACHE_STALE;
@@ -5328,6 +5441,8 @@ int sqlite3VdbeExec(
             ** Write into register P2 an integer which is the last entry in the record at
             ** the end of the index key pointed to by cursor P1.  This integer should be
             ** the rowid of the table entry to which this index entry points.
+            ** 将游标P1指向的最后一条记录的某个整数值写入寄存器P2.
+            ** 这个整数是表记录的rowid
             **
             ** See also: Rowid, MakeRecord.
             */
@@ -5367,26 +5482,36 @@ int sqlite3VdbeExec(
             ** The P4 register values beginning with P3 form an unpacked index
             ** key that omits the ROWID.  Compare this key value against the index
             ** that P1 is currently pointing to, ignoring the ROWID on the P1 index.
+            ** 从寄存器P3开始的P4个寄存器构成一个unpacked index key(除了ROWID),将这个key
+            ** 和游标P1当前指向的记录的key进行比较,忽略游标P1指向索引记录的ROWID.
             **
             ** If the P1 index entry is greater than or equal to the key value
             ** then jump to P2.  Otherwise fall through to the next instruction.
+            ** 如果游标P1指向的索引记录要大于或者等于指令提供的key,那么跳转到P2指令,否则继续往下执行.
             **
             ** If P5 is non-zero then the key value is increased by an epsilon
             ** prior to the comparison.  This make the opcode work like IdxGT except
             ** that if the key from register P3 is a prefix of the key in the cursor,
             ** the result is false whereas it would be true with IdxGT.
+            ** 如果P5非0,那么在开始比较之前,key值将会增加一个epsilon,这会使得操作码很像IdxGt,除了
+            ** 如果从寄存器P3开始的key是游标P1指向的记录的key的前缀,那么IdxGT结果为false,但是IdxGE
+            ** 为true.
             */
             /* Opcode: IdxLT P1 P2 P3 P4 P5
             **
             ** The P4 register values beginning with P3 form an unpacked index
             ** key that omits the ROWID.  Compare this key value against the index
             ** that P1 is currently pointing to, ignoring the ROWID on the P1 index.
+            ** 从寄存器P3开始的P4个寄存器构成一个unpacked index key(除了ROWID),将这个key
+            ** 和游标P1当前指向的记录的key进行比较,忽略游标P1指向索引记录的ROWID.
             **
             ** If the P1 index entry is less than the key value then jump to P2.
             ** Otherwise fall through to the next instruction.
+            ** 如果游标P1指向的索引记录要小于指令提供的key,那么跳转到P2指令,否则继续往下执行.
             **
             ** If P5 is non-zero then the key value is increased by an epsilon prior
             ** to the comparison.  This makes the opcode work like IdxLE.
+            ** 如果P5非0,那么在开始比较之前,key值将会减少一个epsilon,这会使得操作码很像IdxLE
             */
             case OP_IdxLT:          /* jump */
             case OP_IdxGE:          /* jump */
@@ -5443,10 +5568,13 @@ int sqlite3VdbeExec(
             **
             ** Delete an entire database table or index whose root page in the database
             ** file is given by P1.
+            ** 删除整个数据库表/索引,它在数据库中的root page由P1提供.
             **
             ** The table being destroyed is in the main database file if P3==0.  If
             ** P3==1 then the table to be clear is in the auxiliary database file
             ** that is used to store tables create using CREATE TEMPORARY TABLE.
+            ** 如果P3==0,那么表在主数据库文件中,如果P3==1,表在辅助数据库文件中(它用来存储使用
+            ** CREATE TEMPORARY TABLE命令创建的表)
             **
             ** If AUTOVACUUM is enabled then it is possible that another root page
             ** might be moved into the newly deleted root page in order to keep all
@@ -5488,7 +5616,7 @@ int sqlite3VdbeExec(
                     iDb = pOp->p3;
                     assert(iCnt == 1);
                     assert((p->btreeMask & (((yDbMask)1) << iDb)) != 0);
-                    rc = sqlite3BtreeDropTable(db->aDb[iDb].pBt, pOp->p1, &iMoved);
+                    rc = sqlite3BtreeDropTable(db->aDb[iDb].pBt, pOp->p1, &iMoved); /* 删除表 */
                     pOut->flags = MEM_Int;
                     pOut->u.i = iMoved;
 #ifndef SQLITE_OMIT_AUTOVACUUM
@@ -5509,16 +5637,23 @@ int sqlite3VdbeExec(
             ** Delete all contents of the database table or index whose root page
             ** in the database file is given by P1.  But, unlike Destroy, do not
             ** remove the table or index from the database file.
+            ** 删除数据库表/索引的所有内容,它在数据库文件中的root page由P1参数提供.不同于Destroy
+            ** 并不移除数据库文件中的表/索引.
             **
             ** The table being clear is in the main database file if P2==0.  If
             ** P2==1 then the table to be clear is in the auxiliary database file
-            ** that is used to store tables create using CREATE TEMPORARY TABLE.
+            ** 如果P2==0,那么表在主数据库文件中,如果P2==1,表在辅助数据库文件中(它用来存储使用
+            ** CREATE TEMPORARY TABLE命令创建的表)
             **
             ** If the P3 value is non-zero, then the table referred to must be an
             ** intkey table (an SQL table, not an index). In this case the row change
             ** count is incremented by the number of rows in the table being cleared.
             ** If P3 is greater than zero, then the value stored in register P3 is
             ** also incremented by the number of rows in the table being cleared.
+            ** 如果P3非零,那么对应的表肯定是int类型的key(一个SQL表,不是索引).在这种情况下,
+            ** 变化的行数应当增加表中被清理的行的计数值.
+            ** 如果P3大于0,那么存储在寄存器P3中的值应当加上表中被清理行的计数值.
+            ** 
             **
             ** See also: Destroy
             */
